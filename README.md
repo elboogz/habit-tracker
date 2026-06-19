@@ -1,50 +1,54 @@
-# Welcome to your Expo app 👋
+# Habit Tracker
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A mobile habit-tracking app built with Expo (React Native), targeting iOS and Android.
 
-## Get started
+## Features
 
-1. Install dependencies
+- **Today screen** — check off habits daily with haptic + sound + particle-burst feedback
+- **Progress screen** — streaks, consistency heatmaps, last 7 or 14 days
+- **Challenges** — start a multi-habit challenge (e.g. 3-day or 7-day), track completion, view history
+- **Reminders** — local daily notifications, global or per-habit reminder times
+- **Onboarding** — first-run flow that frames your first habit as a 3-day challenge
 
-   ```bash
-   npm install
-   ```
+## Tech stack
 
-2. Start the app
+- [Expo SDK 54](https://docs.expo.dev/versions/v54.0.0/) + Expo Router (file-based routing)
+- React Native + TypeScript
+- AsyncStorage for persistence (no backend)
+- expo-notifications for local reminders
+- expo-haptics + expo-audio for reward feedback
 
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Getting started
 
 ```bash
-npm run reset-project
+npm install
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Scan the QR code with the [Expo Go](https://expo.dev/go) app on your phone, or press `i` / `a` to open in an iOS simulator or Android emulator.
 
-## Learn more
+## Project structure
 
-To learn more about developing your project with Expo, look at the following resources:
+```
+app/
+  (tabs)/         # Bottom nav: Today, Progress, Challenges, Settings
+  habit-form.tsx  # Create / edit habit modal
+  habit/[id].tsx  # Habit detail & history
+  onboarding.tsx  # First-run flow
+lib/
+  habit-store.tsx # Global state (Context + useReducer + AsyncStorage)
+  habit-stats.ts  # Pure derived-state helpers (streaks, consistency, challenge progress)
+  habit-types.ts  # TypeScript types
+  notifications.ts# Local notification scheduling
+components/       # Shared UI components
+constants/        # Theme colors and fonts
+```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Commands
 
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+| Command | Description |
+|---|---|
+| `npx expo start` | Start the Metro dev server |
+| `npm run ios` | Open in iOS simulator |
+| `npm run android` | Open in Android emulator |
+| `npm run lint` | Run ESLint |

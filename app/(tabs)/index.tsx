@@ -1,98 +1,296 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useEffect } from 'react';
+import { Pressable, ScrollView, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
+import { CelebrationOverlay } from '@/components/celebration-overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+import { Colors } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import {
+  challengeProgress,
+  countForDay,
+  dayKey,
+  isDoneOnDay,
+  isDoneToday,
+  streakForHabit,
+} from '@/lib/habit-stats';
+import { useHabitStore } from '@/lib/habit-store';
+import type { Habit } from '@/lib/habit-types';
+import { useCelebration } from '@/lib/use-celebration';
 
-export default function HomeScreen() {
+const STREAK_MESSAGES = ['Nice work! 🎉', "You're on a roll!", 'Keep it up! 💪', 'Consistency wins.'];
+
+function formatTodayLabel(): string {
+  return new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+}
+
+export default function TodayScreen() {
+  const router = useRouter();
+  const colorScheme = useColorScheme();
+  const colors = Colors[colorScheme ?? 'light'];
+  const { state, logHabit, unlogHabit, setChallengeStatus } = useHabitStore();
+  const { celebration, fire, clear } = useCelebration(state.soundEnabled);
+
+  const today = dayKey();
+  const { habits, logs, challenges } = state;
+  const activeChallenge = challenges.find((challenge) => challenge.status === 'active');
+  const activeProgress = activeChallenge ? challengeProgress(activeChallenge, habits, logs) : null;
+
+  // Mark challenges as failed once a day passes without completion — keeps the
+  // Challenges tab honest without requiring the user to do anything.
+  useEffect(() => {
+    for (const challenge of challenges) {
+      if (challenge.status !== 'active') continue;
+      const progress = challengeProgress(challenge, habits, logs);
+      if (progress.isFailed) setChallengeStatus(challenge.id, 'failed');
+    }
+  }, [challenges, habits, logs, setChallengeStatus]);
+
+  const completedCount = habits.filter((habit) => isDoneToday(habit, logs)).length;
+
+  function handleLog(habit: Habit) {
+    const wasDoneToday = isDoneToday(habit, logs);
+    if (habit.type === 'simple' && wasDoneToday) return;
+
+    logHabit(habit.id, 1);
+
+    const syntheticLog = { id: 'pending', habitId: habit.id, date: today, count: 1, loggedAt: '' };
+    const nextLogs = [...logs, syntheticLog];
+    const nowDone = isDoneOnDay(habit, nextLogs, today);
+
+    if (!nowDone) {
+      const count = countForDay(nextLogs, habit.id, today);
+      fire(habit.emoji, `${count} of ${habit.targetCount} today — keep going!`);
+      return;
+    }
+
+    if (wasDoneToday) {
+      fire(habit.emoji, 'Bonus rep — nice!');
+      return;
+    }
+
+    const wasAllDoneBefore = habits.every((h) => isDoneOnDay(h, logs, today));
+    const allDoneNow = habits.every((h) => isDoneOnDay(h, nextLogs, today));
+    const justCompletedAllHabits = habits.length > 1 && allDoneNow && !wasAllDoneBefore;
+
+    const habitChallenge = challenges.find((c) => c.status === 'active' && c.habitIds.includes(habit.id));
+    if (habitChallenge) {
+      const progress = challengeProgress(habitChallenge, habits, nextLogs);
+      if (progress.isComplete) {
+        setChallengeStatus(habitChallenge.id, 'completed');
+        fire('🏆', 'Challenge complete! 🎉', true);
+        return;
+      }
+      if (progress.todayDone) {
+        if (justCompletedAllHabits) {
+          fire('🎉', "All habits done for today — you're crushing it!", true);
+        } else {
+          fire('🚩', `Day ${progress.daysElapsed} of ${progress.totalDays} — challenge on track!`);
+        }
+        return;
+      }
+      const remaining = progress.habits.filter((h) => !isDoneOnDay(h, nextLogs, today)).length;
+      fire(habit.emoji, `${remaining} more habit${remaining === 1 ? '' : 's'} to go for today's challenge`);
+      return;
+    }
+
+    if (justCompletedAllHabits) {
+      fire('🎉', "All habits done for today — you're crushing it!", true);
+      return;
+    }
+
+    const streak = streakForHabit(habit, nextLogs);
+    const message = streak > 1 ? `🔥 ${streak} day streak!` : STREAK_MESSAGES[streak % STREAK_MESSAGES.length];
+    fire(habit.emoji, message);
+  }
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    <ThemedView style={styles.container}>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <ThemedView style={styles.header}>
+            <ThemedText type="title">Today</ThemedText>
+            <ThemedText style={{ color: colors.icon }}>{formatTodayLabel()}</ThemedText>
+            {habits.length > 0 && (
+              <ThemedText style={{ color: colors.icon }}>
+                {`${completedCount} of ${habits.length} done today`}
+              </ThemedText>
+            )}
+            {habits.length === 0 && (
+              <ThemedText style={{ color: colors.icon }}>Add your first habit to get started</ThemedText>
+            )}
+          </ThemedView>
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+          {activeChallenge && activeProgress && activeProgress.habits.length > 0 && (
+            <Pressable onPress={() => router.push('/(tabs)/challenges')}>
+              <ThemedView style={[styles.challengeBanner, { borderColor: colors.tint }]}>
+                <ThemedText type="defaultSemiBold">
+                  🚩 Day {activeProgress.daysElapsed} of {activeProgress.totalDays} challenge
+                </ThemedText>
+                <ThemedText style={{ color: colors.icon, fontSize: 14 }}>
+                  {activeProgress.habits.map((h) => h.emoji).join(' ')}{' '}
+                  {activeProgress.habits.length === 1
+                    ? activeProgress.habits[0].name
+                    : `${activeProgress.habits.length} habits`}{' '}
+                  — {activeProgress.todayDone ? "today's set is locked in" : 'log them all today to keep your run alive'}
+                </ThemedText>
+              </ThemedView>
+            </Pressable>
+          )}
+
+          <ThemedView style={styles.list}>
+            {habits.map((habit) => {
+              const done = isDoneToday(habit, logs);
+              const streak = streakForHabit(habit, logs);
+              const todayCount = countForDay(logs, habit.id, today);
+
+              return (
+                <ThemedView
+                  key={habit.id}
+                  style={[
+                    styles.habitRow,
+                    { borderColor: colors.icon },
+                    habit.type === 'count' && { alignItems: 'flex-start' },
+                  ]}>
+                  <Pressable
+                    onPress={() => (done ? unlogHabit(habit.id) : handleLog(habit))}
+                    style={({ pressed }) => [
+                      styles.checkbox,
+                      { borderColor: colors.tint },
+                      done && { backgroundColor: colors.tint },
+                      pressed && { opacity: 0.7 },
+                    ]}>
+                    {done && <ThemedText style={{ color: colors.background, fontSize: 16 }}>✓</ThemedText>}
+                  </Pressable>
+                  <ThemedView style={styles.habitInfo}>
+                    <Pressable
+                      style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+                      onPress={() => router.push(`/habit/${habit.id}`)}>
+                      <ThemedText type="defaultSemiBold">
+                        {habit.emoji} {habit.name}
+                      </ThemedText>
+                      <ThemedText style={{ color: colors.icon, fontSize: 14 }}>
+                        🔥 {streak} day streak{habit.reminderTimes?.length ? ' · 🔔' : ''}
+                      </ThemedText>
+                    </Pressable>
+                    {habit.type === 'count' && (
+                      <ThemedView style={styles.countStepper}>
+                        <Pressable
+                          onPress={() => unlogHabit(habit.id)}
+                          disabled={todayCount === 0}
+                          style={({ pressed }) => [
+                            styles.miniStepperButton,
+                            { borderColor: colors.icon },
+                            todayCount === 0 && { opacity: 0.3 },
+                            pressed && { opacity: 0.7 },
+                          ]}>
+                          <ThemedText style={{ fontSize: 16 }}>−</ThemedText>
+                        </Pressable>
+                        <ThemedText style={{ fontSize: 13, fontWeight: '700', minWidth: 34, textAlign: 'center' }}>
+                          {todayCount}/{habit.targetCount}
+                        </ThemedText>
+                        <Pressable
+                          onPress={() => handleLog(habit)}
+                          style={({ pressed }) => [
+                            styles.miniStepperButton,
+                            { borderColor: colors.icon },
+                            pressed && { opacity: 0.7 },
+                          ]}>
+                          <ThemedText style={{ fontSize: 16 }}>+</ThemedText>
+                        </Pressable>
+                      </ThemedView>
+                    )}
+                  </ThemedView>
+                  <IconSymbol name="chevron.right" size={18} color={colors.icon} />
+                </ThemedView>
+              );
+            })}
+          </ThemedView>
+
+          <Pressable
+            onPress={() => router.push('/habit-form')}
+            style={({ pressed }) => [
+              styles.addButton,
+              { backgroundColor: colors.tint },
+              pressed && { opacity: 0.8 },
+            ]}>
+            <IconSymbol name="plus" size={18} color={colors.background} />
+            <ThemedText style={{ color: colors.background, fontWeight: '600' }}>Add a habit</ThemedText>
+          </Pressable>
+        </ScrollView>
+      </SafeAreaView>
+      <CelebrationOverlay celebration={celebration} onDone={clear} />
+    </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
+  container: {
+    flex: 1,
+  },
+  safeArea: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 40,
+    gap: 20,
+  },
+  header: {
+    gap: 4,
+  },
+  challengeBanner: {
+    gap: 4,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1.5,
+  },
+  list: {
+    gap: 8,
+  },
+  habitRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 14,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  checkbox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  countStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  miniStepperButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  habitInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 16,
   },
 });
