@@ -67,7 +67,7 @@ export function ReminderTimesEditor({ times, onChange }: { times: string[]; onCh
   );
 }
 
-function Stepper({
+export function Stepper({
   value,
   onChange,
   format,

@@ -1,13 +1,17 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createContext, useContext, useEffect, useMemo, useReducer, useState, type ReactNode } from 'react';
+import * as Crypto from 'expo-crypto';
+import { createContext, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
+import { AppState } from 'react-native';
 
+import { useAuth } from './auth-store';
 import { addDays, dayKey } from './habit-stats';
 import type { Challenge, Habit, HabitLog, HabitState, HabitType } from './habit-types';
 import { scheduleAllReminders } from './notifications';
+import { diffAndSync, enqueueFullUpload, pullRemoteChanges, pushPendingChanges, type RemoteChanges } from './supabase-sync';
 
-const STORAGE_KEY = 'habit-tracker/state-v1';
-
-let nextHabitSeq = 1;
+/** Pre-auth storage key, written before this app had accounts. Only read once, as a one-time migration into a brand-new account. */
+const LEGACY_STORAGE_KEY = 'habit-tracker/state-v1';
+const scopedKey = (userId: string) => `habit-tracker/state-v1:${userId}`;
 
 const initialState: HabitState = {
   habits: [],
@@ -29,8 +33,22 @@ function migrateChallenges(challenges: LegacyChallenge[] | undefined): Challenge
   }));
 }
 
+/** Pre-sync local data has no updatedAt — backfill it once so last-write-wins merging has something to compare against. */
+function backfillTimestamps(state: HabitState): HabitState {
+  return {
+    ...state,
+    habits: state.habits.map((habit) => ({ ...habit, updatedAt: habit.updatedAt ?? habit.createdAt })),
+    logs: state.logs.map((log) => ({ ...log, updatedAt: log.updatedAt ?? log.loggedAt })),
+    challenges: state.challenges.map((challenge) => ({
+      ...challenge,
+      updatedAt: challenge.updatedAt ?? new Date().toISOString(),
+    })),
+  };
+}
+
 type Action =
   | { type: 'hydrate'; state: HabitState }
+  | { type: 'mergeRemote'; changes: RemoteChanges }
   | { type: 'addHabit'; habit: Habit }
   | { type: 'updateHabit'; habit: Habit }
   | { type: 'deleteHabit'; habitId: string }
@@ -51,6 +69,30 @@ function reducer(state: HabitState, action: Action): HabitState {
   switch (action.type) {
     case 'hydrate':
       return action.state;
+    case 'mergeRemote': {
+      const { changes } = action;
+      const habits = state.habits.filter((habit) => !changes.deletedHabitIds.includes(habit.id));
+      for (const habit of changes.habits) {
+        const index = habits.findIndex((existing) => existing.id === habit.id);
+        if (index === -1) habits.push(habit);
+        else if (habit.updatedAt >= habits[index].updatedAt) habits[index] = habit;
+      }
+
+      const logs = state.logs.filter((log) => !changes.deletedHabitIds.includes(log.habitId));
+      const existingLogIds = new Set(logs.map((log) => log.id));
+      for (const log of changes.logs) {
+        if (!existingLogIds.has(log.id)) logs.push(log);
+      }
+
+      const challenges = state.challenges.filter((challenge) => !changes.deletedChallengeIds.includes(challenge.id));
+      for (const challenge of changes.challenges) {
+        const index = challenges.findIndex((existing) => existing.id === challenge.id);
+        if (index === -1) challenges.push(challenge);
+        else if (challenge.updatedAt >= challenges[index].updatedAt) challenges[index] = challenge;
+      }
+
+      return { ...state, habits, logs, challenges, ...(changes.settings ?? {}) };
+    }
     case 'addHabit':
       return { ...state, habits: [...state.habits, action.habit] };
     case 'updateHabit':
@@ -65,19 +107,25 @@ function reducer(state: HabitState, action: Action): HabitState {
         logs: state.logs.filter((log) => log.habitId !== action.habitId),
         challenges: state.challenges
           .map((challenge) =>
-            challenge.status === 'active'
-              ? { ...challenge, habitIds: challenge.habitIds.filter((id) => id !== action.habitId) }
+            challenge.status === 'active' && challenge.habitIds.includes(action.habitId)
+              ? {
+                  ...challenge,
+                  habitIds: challenge.habitIds.filter((id) => id !== action.habitId),
+                  updatedAt: new Date().toISOString(),
+                }
               : challenge,
           )
           .filter((challenge) => challenge.status !== 'active' || challenge.habitIds.length > 0),
       };
     case 'logHabit': {
-      const log = {
-        id: `${action.habitId}-${Date.now()}`,
+      const now = new Date().toISOString();
+      const log: HabitLog = {
+        id: Crypto.randomUUID(),
         habitId: action.habitId,
         date: dayKey(),
         count: action.amount,
-        loggedAt: new Date().toISOString(),
+        loggedAt: now,
+        updatedAt: now,
       };
       return { ...state, logs: [...state.logs, log] };
     }
@@ -92,18 +140,21 @@ function reducer(state: HabitState, action: Action): HabitState {
       return {
         ...state,
         challenges: state.challenges.map((challenge) =>
-          challenge.id === action.challengeId ? { ...challenge, status: action.status } : challenge,
+          challenge.id === action.challengeId
+            ? { ...challenge, status: action.status, updatedAt: new Date().toISOString() }
+            : challenge,
         ),
       };
     case 'startChallenge': {
       if (action.habitIds.length === 0) return state;
       if (state.challenges.some((challenge) => challenge.status === 'active')) return state;
       const challenge: Challenge = {
-        id: `challenge-${Date.now()}`,
+        id: Crypto.randomUUID(),
         habitIds: action.habitIds,
         durationDays: action.durationDays,
         startDate: dayKey(),
         status: 'active',
+        updatedAt: new Date().toISOString(),
       };
       return { ...state, challenges: [...state.challenges, challenge] };
     }
@@ -119,6 +170,7 @@ function reducer(state: HabitState, action: Action): HabitState {
       const habit = state.habits.find((h) => h.id === action.habitId);
       if (!habit) return state;
       const amount = habit.type === 'count' ? (habit.targetCount ?? 1) : 1;
+      const now = new Date().toISOString();
       const filteredLogs = state.logs.filter(
         (log) => !(log.habitId === action.habitId && action.dates.includes(log.date)),
       );
@@ -127,7 +179,8 @@ function reducer(state: HabitState, action: Action): HabitState {
         habitId: action.habitId,
         date,
         count: amount,
-        loggedAt: new Date().toISOString(),
+        loggedAt: now,
+        updatedAt: now,
       }));
       return { ...state, logs: [...filteredLogs, ...newLogs] };
     }
@@ -144,6 +197,7 @@ function reducer(state: HabitState, action: Action): HabitState {
         pastDates.push(addDays(newStartDate, i));
       }
 
+      const now = new Date().toISOString();
       let logs = state.logs;
       for (const habit of challengeHabits) {
         const amount = habit.type === 'count' ? (habit.targetCount ?? 1) : 1;
@@ -153,7 +207,8 @@ function reducer(state: HabitState, action: Action): HabitState {
           habitId: habit.id,
           date,
           count: amount,
-          loggedAt: new Date().toISOString(),
+          loggedAt: now,
+          updatedAt: now,
         }));
         logs = [...logs, ...newLogs];
       }
@@ -161,7 +216,9 @@ function reducer(state: HabitState, action: Action): HabitState {
       return {
         ...state,
         logs,
-        challenges: state.challenges.map((c) => (c.id === challenge.id ? { ...c, startDate: newStartDate } : c)),
+        challenges: state.challenges.map((c) =>
+          c.id === challenge.id ? { ...c, startDate: newStartDate, updatedAt: now } : c,
+        ),
       };
     }
     case 'debugCompleteChallenge': {
@@ -177,6 +234,7 @@ function reducer(state: HabitState, action: Action): HabitState {
         allDates.push(addDays(newStartDate, i));
       }
 
+      const now = new Date().toISOString();
       let logs = state.logs;
       for (const habit of challengeHabits) {
         const amount = habit.type === 'count' ? (habit.targetCount ?? 1) : 1;
@@ -186,7 +244,8 @@ function reducer(state: HabitState, action: Action): HabitState {
           habitId: habit.id,
           date,
           count: amount,
-          loggedAt: new Date().toISOString(),
+          loggedAt: now,
+          updatedAt: now,
         }));
         logs = [...logs, ...newLogs];
       }
@@ -195,7 +254,7 @@ function reducer(state: HabitState, action: Action): HabitState {
         ...state,
         logs,
         challenges: state.challenges.map((c) =>
-          c.id === challenge.id ? { ...c, startDate: newStartDate, status: 'completed' } : c,
+          c.id === challenge.id ? { ...c, startDate: newStartDate, status: 'completed', updatedAt: now } : c,
         ),
       };
     }
@@ -242,38 +301,119 @@ type HabitStore = {
 const HabitStoreContext = createContext<HabitStore | null>(null);
 
 export function HabitStoreProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
+
   const [state, dispatch] = useReducer(reducer, initialState);
   const [hydrated, setHydrated] = useState(false);
 
+  // Baseline for diffing local mutations against, to decide what to push to Supabase.
+  // Updated on every render so a 'hydrate'/'mergeRemote' dispatch never gets re-diffed
+  // against itself; skipNextDiffRef additionally guards the dev-only full reset.
+  const prevSyncedStateRef = useRef<HabitState | null>(null);
+  const skipNextDiffRef = useRef(false);
+
+  // Hydrate whenever the signed-in user changes: load that user's local cache, or — if
+  // this device has never seen this account before — adopt any pre-existing (pre-auth)
+  // local data instead of discarding it, then push it up as that user's first sync.
   useEffect(() => {
     let cancelled = false;
-    AsyncStorage.getItem(STORAGE_KEY)
-      .then((raw) => {
-        if (cancelled || !raw) return;
+    setHydrated(false);
+
+    if (!userId) {
+      dispatch({ type: 'hydrate', state: initialState });
+      setHydrated(true);
+      return;
+    }
+
+    (async () => {
+      const scoped = await AsyncStorage.getItem(scopedKey(userId));
+      if (cancelled) return;
+
+      if (scoped) {
         try {
-          const parsed = JSON.parse(raw);
+          const parsed = JSON.parse(scoped);
           dispatch({
             type: 'hydrate',
             state: { ...initialState, ...parsed, challenges: migrateChallenges(parsed.challenges) },
           });
         } catch {
-          // Corrupt or pre-migration data — fall back to the initial empty state.
+          dispatch({ type: 'hydrate', state: initialState });
         }
-      })
-      .finally(() => {
-        if (!cancelled) setHydrated(true);
-      });
+      } else {
+        const legacy = await AsyncStorage.getItem(LEGACY_STORAGE_KEY);
+        let migrated: HabitState | null = null;
+        if (legacy) {
+          try {
+            const parsed = JSON.parse(legacy);
+            migrated = backfillTimestamps({
+              ...initialState,
+              ...parsed,
+              challenges: migrateChallenges(parsed.challenges),
+            });
+          } catch {
+            // Corrupt legacy data — fall back to a fresh start below.
+          }
+        }
+        dispatch({ type: 'hydrate', state: migrated ?? initialState });
+        if (migrated) {
+          await enqueueFullUpload(migrated, userId);
+          await AsyncStorage.removeItem(LEGACY_STORAGE_KEY);
+        }
+      }
+
+      if (cancelled) return;
+      setHydrated(true);
+
+      await pushPendingChanges();
+      const changes = await pullRemoteChanges(userId);
+      if (!cancelled && changes) dispatch({ type: 'mergeRemote', changes });
+    })();
+
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     // Skip the pre-hydration write — otherwise the initial empty state would
     // briefly overwrite whatever was already persisted on disk.
-    if (!hydrated) return;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }, [state, hydrated]);
+    if (!hydrated || !userId) return;
+    AsyncStorage.setItem(scopedKey(userId), JSON.stringify(state));
+  }, [state, hydrated, userId]);
+
+  // Mirror local mutations out to Supabase in the background. Diffing against the last
+  // synced snapshot (rather than hooking every mutator) keeps habit-store's mutators
+  // backend-agnostic — they only ever touch the local reducer.
+  useEffect(() => {
+    if (!hydrated || !userId) {
+      prevSyncedStateRef.current = state;
+      return;
+    }
+    const prev = prevSyncedStateRef.current;
+    prevSyncedStateRef.current = state;
+    if (!prev) return;
+    if (skipNextDiffRef.current) {
+      skipNextDiffRef.current = false;
+      return;
+    }
+    diffAndSync(prev, state, userId);
+  }, [state, hydrated, userId]);
+
+  // Catch up on remote changes (e.g. from another device) whenever the app comes back
+  // to the foreground — there's no realtime subscription, so this is the pull trigger.
+  useEffect(() => {
+    if (!hydrated || !userId) return;
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') return;
+      (async () => {
+        await pushPendingChanges();
+        const changes = await pullRemoteChanges(userId);
+        if (changes) dispatch({ type: 'mergeRemote', changes });
+      })();
+    });
+    return () => subscription.remove();
+  }, [hydrated, userId]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -285,19 +425,21 @@ export function HabitStoreProvider({ children }: { children: ReactNode }) {
       state,
       hydrated,
       addHabit: (input) => {
+        const now = new Date().toISOString();
         const habit: Habit = {
-          id: `habit-${Date.now()}-${nextHabitSeq++}`,
+          id: Crypto.randomUUID(),
           name: input.name,
           emoji: input.emoji,
           type: input.type,
           targetCount: input.type === 'count' ? input.targetCount : undefined,
           reminderTimes: input.reminderTimes && input.reminderTimes.length > 0 ? input.reminderTimes : undefined,
-          createdAt: new Date().toISOString(),
+          createdAt: now,
+          updatedAt: now,
         };
         dispatch({ type: 'addHabit', habit });
         return habit;
       },
-      updateHabit: (habit) => dispatch({ type: 'updateHabit', habit }),
+      updateHabit: (habit) => dispatch({ type: 'updateHabit', habit: { ...habit, updatedAt: new Date().toISOString() } }),
       deleteHabit: (habitId) => dispatch({ type: 'deleteHabit', habitId }),
       logHabit: (habitId, amount = 1) => dispatch({ type: 'logHabit', habitId, amount }),
       unlogHabit: (habitId) => dispatch({ type: 'unlogHabit', habitId }),
@@ -310,7 +452,11 @@ export function HabitStoreProvider({ children }: { children: ReactNode }) {
       debugBackfillLogs: (habitId, dates) => dispatch({ type: 'debugBackfillLogs', habitId, dates }),
       debugAdvanceChallenge: (challengeId) => dispatch({ type: 'debugAdvanceChallenge', challengeId }),
       debugCompleteChallenge: (challengeId) => dispatch({ type: 'debugCompleteChallenge', challengeId }),
-      resetAllData: () => dispatch({ type: 'resetAllData' }),
+      resetAllData: () => {
+        // Local-only preview reset — must not propagate as a mass-delete to the real account.
+        skipNextDiffRef.current = true;
+        dispatch({ type: 'resetAllData' });
+      },
     }),
     [state, hydrated],
   );

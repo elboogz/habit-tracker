@@ -1,14 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CelebrationOverlay } from '@/components/celebration-overlay';
-import { ReminderTimesEditor } from '@/components/reminder-times-editor';
+import { ReminderTimesEditor, Stepper } from '@/components/reminder-times-editor';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { confirmAction } from '@/lib/confirm';
+import { type InsightKind, regenerateInsight } from '@/lib/ai-coach';
+import { useAuth } from '@/lib/auth-store';
+import { disableCoachPush, enableCoachPush, getCoachPushPrefs } from '@/lib/coach-push';
+import { alertMessage, confirmAction } from '@/lib/confirm';
 import { addDays, challengeProgress, dayKey } from '@/lib/habit-stats';
 import { useHabitStore } from '@/lib/habit-store';
 import { ensureNotificationPermission, notificationsSupported } from '@/lib/notifications';
@@ -30,9 +33,86 @@ export default function SettingsScreen() {
     resetAllData,
   } = useHabitStore();
   const { celebration, fire, clear } = useCelebration(state.soundEnabled);
+  const { user, signOut } = useAuth();
   const [busy, setBusy] = useState(false);
   const [simulatedIds, setSimulatedIds] = useState<Set<string>>(new Set());
   const { enabled, times } = state.notifications;
+
+  const [coachPushEnabled, setCoachPushEnabled] = useState(false);
+  const [coachPushLoaded, setCoachPushLoaded] = useState(false);
+  const [coachPushHour, setCoachPushHour] = useState(15);
+  const [coachPushMinute, setCoachPushMinute] = useState(0);
+  const [coachPushBusy, setCoachPushBusy] = useState(false);
+  const [regeneratingKind, setRegeneratingKind] = useState<InsightKind | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    getCoachPushPrefs(user.id).then((prefs) => {
+      if (cancelled) return;
+      if (prefs) {
+        setCoachPushEnabled(prefs.enabled);
+        if (prefs.time) {
+          const [hour, minute] = prefs.time.split(':').map(Number);
+          setCoachPushHour(hour);
+          setCoachPushMinute(minute);
+        }
+      }
+      setCoachPushLoaded(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  function formatCoachPushTime(hour: number, minute: number) {
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  }
+
+  async function handleCoachPushToggle(next: boolean) {
+    if (!user) return;
+    setCoachPushBusy(true);
+    const result = next
+      ? await enableCoachPush(user.id, formatCoachPushTime(coachPushHour, coachPushMinute))
+      : await disableCoachPush(user.id);
+    setCoachPushBusy(false);
+
+    if (result.error) {
+      alertMessage("Couldn't update AI Coach notifications", result.error);
+      return;
+    }
+    setCoachPushEnabled(next);
+  }
+
+  async function handleCoachPushTimeChange(hour: number, minute: number) {
+    setCoachPushHour(hour);
+    setCoachPushMinute(minute);
+    if (!coachPushEnabled || !user) return;
+    setCoachPushBusy(true);
+    const result = await enableCoachPush(user.id, formatCoachPushTime(hour, minute));
+    setCoachPushBusy(false);
+    if (result.error) alertMessage("Couldn't update AI Coach time", result.error);
+  }
+
+  async function handleRegenerateInsight(kind: InsightKind) {
+    setRegeneratingKind(kind);
+    const result = await regenerateInsight(kind);
+    setRegeneratingKind(null);
+    if (!result) {
+      alertMessage("Couldn't generate", 'Make sure you have at least one logged habit, then try again.');
+      return;
+    }
+    alertMessage(`New ${kind} insight`, result.content);
+  }
+
+  function handleSignOut() {
+    confirmAction(
+      'Sign out?',
+      'You can sign back in anytime — your habits stay saved to your account.',
+      'Sign out',
+      signOut,
+    );
+  }
 
   async function handleToggle(next: boolean) {
     setBusy(true);
@@ -114,6 +194,19 @@ export default function SettingsScreen() {
           </ThemedView>
 
           <ThemedView style={styles.section}>
+            <ThemedText type="defaultSemiBold">Account</ThemedText>
+            <ThemedView style={[styles.row, { borderColor: colors.icon }]}>
+              <ThemedView style={{ flex: 1, gap: 2 }}>
+                <ThemedText type="defaultSemiBold">Signed in</ThemedText>
+                <ThemedText style={{ color: colors.icon, fontSize: 13 }}>{user?.email}</ThemedText>
+              </ThemedView>
+            </ThemedView>
+            <Pressable onPress={handleSignOut} style={[styles.resetButton, { borderColor: colors.tint }]}>
+              <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>Sign out</ThemedText>
+            </Pressable>
+          </ThemedView>
+
+          <ThemedView style={styles.section}>
             <ThemedText type="defaultSemiBold">Daily check-ins</ThemedText>
             <ThemedView style={[styles.row, { borderColor: colors.icon }]}>
               <ThemedView style={{ flex: 1, gap: 2 }}>
@@ -148,6 +241,53 @@ export default function SettingsScreen() {
                 scheduling. Your preferences are saved and will take effect in a development or production build.
               </ThemedText>
             )}
+          </ThemedView>
+
+          <ThemedView style={styles.section}>
+            <ThemedText type="defaultSemiBold">AI Coach</ThemedText>
+            <ThemedView style={[styles.row, { borderColor: colors.icon }]}>
+              <ThemedView style={{ flex: 1, gap: 2 }}>
+                <ThemedText type="defaultSemiBold">Daily coaching nudge</ThemedText>
+                <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
+                  A personalized push from your AI coach, based on your recent habits — sent even when the app
+                  is closed.
+                </ThemedText>
+              </ThemedView>
+              <Switch
+                value={coachPushEnabled}
+                onValueChange={handleCoachPushToggle}
+                disabled={coachPushBusy || !coachPushLoaded}
+                trackColor={{ false: colors.icon, true: colors.tint }}
+                thumbColor="#fff"
+              />
+            </ThemedView>
+
+            {coachPushEnabled && (
+              <ThemedView style={{ gap: 8 }}>
+                <ThemedText style={{ color: colors.icon, fontSize: 13 }}>Notification time</ThemedText>
+                <ThemedView style={styles.pickerRow}>
+                  <Stepper
+                    value={coachPushHour}
+                    onChange={(v) => handleCoachPushTimeChange(((v % 24) + 24) % 24, coachPushMinute)}
+                    format={(v) => String(v).padStart(2, '0')}
+                  />
+                  <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>
+                    :
+                  </ThemedText>
+                  <Stepper
+                    value={coachPushMinute}
+                    onChange={(v) => handleCoachPushTimeChange(coachPushHour, ((v % 60) + 60) % 60)}
+                    step={5}
+                    format={(v) => String(v).padStart(2, '0')}
+                  />
+                </ThemedView>
+              </ThemedView>
+            )}
+
+            <ThemedText style={{ color: colors.icon, fontSize: 12, lineHeight: 17 }}>
+              Push notifications need a real device and an EAS-linked build. Android via Expo Go isn&apos;t
+              supported (a platform restriction) — this works on iOS via Expo Go or any build for now.
+            </ThemedText>
           </ThemedView>
 
           <ThemedView style={styles.section}>
@@ -264,6 +404,29 @@ export default function SettingsScreen() {
                 </ThemedView>
               )}
 
+              {state.habits.length > 0 && (
+                <ThemedView style={{ gap: 8 }}>
+                  <ThemedText style={{ fontSize: 13, fontWeight: '600' }}>AI Coach insights</ThemedText>
+                  <ThemedView style={{ flexDirection: 'row', gap: 8 }}>
+                    {(['nudge', 'weekly', 'monthly'] as const).map((kind) => (
+                      <Pressable
+                        key={kind}
+                        onPress={() => handleRegenerateInsight(kind)}
+                        disabled={regeneratingKind !== null}
+                        style={[styles.devButton, { borderColor: colors.tint, flex: 1, alignItems: 'center' }]}>
+                        <ThemedText style={{ color: colors.tint, fontWeight: '600', fontSize: 13 }}>
+                          {regeneratingKind === kind ? 'Generating…' : `Regenerate ${kind}`}
+                        </ThemedText>
+                      </Pressable>
+                    ))}
+                  </ThemedView>
+                  <ThemedText style={{ color: colors.icon, fontSize: 12, lineHeight: 17 }}>
+                    Bypasses the freshness cache and calls Claude again right now, showing the new text in an alert
+                    here so you can check tone and content without waiting or leaving Settings.
+                  </ThemedText>
+                </ThemedView>
+              )}
+
               <Pressable onPress={handleResetOnboarding} style={[styles.resetButton, { borderColor: colors.tint }]}>
                 <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>Reset onboarding</ThemedText>
               </Pressable>
@@ -302,6 +465,11 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 16,
     borderWidth: 1,
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   devRow: {
     flexDirection: 'row',

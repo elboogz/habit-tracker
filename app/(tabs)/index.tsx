@@ -57,7 +57,7 @@ export default function TodayScreen() {
 
     logHabit(habit.id, 1);
 
-    const syntheticLog = { id: 'pending', habitId: habit.id, date: today, count: 1, loggedAt: '' };
+    const syntheticLog = { id: 'pending', habitId: habit.id, date: today, count: 1, loggedAt: '', updatedAt: '' };
     const nextLogs = [...logs, syntheticLog];
     const nowDone = isDoneOnDay(habit, nextLogs, today);
 

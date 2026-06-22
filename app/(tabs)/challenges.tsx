@@ -29,6 +29,10 @@ export default function ChallengesScreen() {
   const activeChallenge = challenges.find((c) => c.status === 'active');
   const activeProgress = activeChallenge ? challengeProgress(activeChallenge, habits, logs) : null;
   const past = challenges.filter((c) => c.status !== 'active').slice().reverse();
+  // Habits with the same name (e.g. accidentally added twice) should only offer one pick here.
+  const pickableHabits = habits.filter(
+    (habit, index) => habits.findIndex((other) => other.name === habit.name) === index,
+  );
 
   function toggleHabit(habitId: string) {
     setSelectedIds((current) =>
@@ -82,7 +86,7 @@ export default function ChallengesScreen() {
                 <>
                   <ThemedText style={{ color: colors.icon, fontSize: 13 }}>Choose the habits to include</ThemedText>
                   <ThemedView style={{ gap: 8 }}>
-                    {habits.map((habit) => {
+                    {pickableHabits.map((habit) => {
                       const selected = selectedIds.includes(habit.id);
                       return (
                         <Pressable

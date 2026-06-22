@@ -1,4 +1,5 @@
-import { useAudioPlayer } from 'expo-audio';
+import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
+import { useEffect } from 'react';
 
 const chimeSource = require('@/assets/sounds/chime.wav');
 
@@ -8,6 +9,12 @@ const chimeSource = require('@/assets/sounds/chime.wav');
  */
 export function useChime() {
   const player = useAudioPlayer(chimeSource);
+
+  useEffect(() => {
+    // Without this, iOS silences the chime whenever the hardware mute switch is on —
+    // surprising for a sound the user explicitly opted into via the Settings toggle.
+    setAudioModeAsync({ playsInSilentMode: true, interruptionMode: 'mixWithOthers' });
+  }, []);
 
   return function playChime() {
     player.seekTo(0);

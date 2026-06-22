@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { HabitHeatmap } from '@/components/habit-heatmap';
@@ -9,12 +9,14 @@ import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getInsight, type Insight, type InsightKind } from '@/lib/ai-coach';
 import { consistency, longestStreak, recentHistory, streakForHabit } from '@/lib/habit-stats';
 import { useHabitStore } from '@/lib/habit-store';
 
 type ViewMode = '14days' | '7days';
 
 const DAYS_BY_MODE: Record<ViewMode, number> = { '14days': 14, '7days': 7 };
+type ReflectionMode = 'weekly' | 'monthly';
 
 export default function ProgressScreen() {
   const router = useRouter();
@@ -24,6 +26,46 @@ export default function ProgressScreen() {
   const { habits, logs } = state;
   const [viewMode, setViewMode] = useState<ViewMode>('14days');
   const days = DAYS_BY_MODE[viewMode];
+
+  const hasHabits = habits.length > 0;
+  const [nudge, setNudge] = useState<Insight | null>(null);
+  const [nudgeLoading, setNudgeLoading] = useState(false);
+  const [reflectionMode, setReflectionMode] = useState<ReflectionMode>('weekly');
+  const [reflection, setReflection] = useState<Insight | null>(null);
+  const [reflectionLoading, setReflectionLoading] = useState(false);
+
+  useEffect(() => {
+    if (!hasHabits) return;
+    let cancelled = false;
+    setNudgeLoading(true);
+    getInsight('nudge').then((result) => {
+      if (!cancelled) {
+        setNudge(result);
+        setNudgeLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Re-fetch once per mount — the Edge Function's own freshness cache decides whether
+    // that means an instant cache hit or a fresh generation.
+  }, [hasHabits]);
+
+  useEffect(() => {
+    if (!hasHabits) return;
+    let cancelled = false;
+    setReflectionLoading(true);
+    setReflection(null);
+    getInsight(reflectionMode as InsightKind).then((result) => {
+      if (!cancelled) {
+        setReflection(result);
+        setReflectionLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasHabits, reflectionMode]);
 
   const overallConsistency =
     habits.length === 0
@@ -42,6 +84,59 @@ export default function ProgressScreen() {
                 : `${overallConsistency}% consistent over the last ${days} days`}
             </ThemedText>
           </ThemedView>
+
+          {hasHabits && (
+            <ThemedView style={[styles.coachCard, { borderColor: colors.tint }]}>
+              <ThemedView style={styles.coachHeader}>
+                <ThemedText type="defaultSemiBold">🧠 Coach</ThemedText>
+              </ThemedView>
+
+              {nudgeLoading ? (
+                <ThemedView style={styles.coachLoading}>
+                  <ActivityIndicator color={colors.tint} />
+                  <ThemedText style={{ color: colors.icon, fontSize: 13 }}>Thinking about your habits...</ThemedText>
+                </ThemedView>
+              ) : (
+                <ThemedText style={{ fontSize: 14, lineHeight: 20 }}>{nudge?.content ?? 'No tip yet.'}</ThemedText>
+              )}
+
+              <ThemedView style={[styles.coachDivider, { borderColor: colors.icon }]} />
+
+              <ThemedView style={styles.segmented}>
+                <Pressable
+                  onPress={() => setReflectionMode('weekly')}
+                  style={[
+                    styles.segment,
+                    { borderColor: colors.icon },
+                    reflectionMode === 'weekly' && { backgroundColor: colors.tint, borderColor: colors.tint },
+                  ]}>
+                  <ThemedText style={{ color: reflectionMode === 'weekly' ? colors.background : colors.text, fontSize: 13 }}>
+                    This week
+                  </ThemedText>
+                </Pressable>
+                <Pressable
+                  onPress={() => setReflectionMode('monthly')}
+                  style={[
+                    styles.segment,
+                    { borderColor: colors.icon },
+                    reflectionMode === 'monthly' && { backgroundColor: colors.tint, borderColor: colors.tint },
+                  ]}>
+                  <ThemedText style={{ color: reflectionMode === 'monthly' ? colors.background : colors.text, fontSize: 13 }}>
+                    This month
+                  </ThemedText>
+                </Pressable>
+              </ThemedView>
+
+              {reflectionLoading ? (
+                <ThemedView style={styles.coachLoading}>
+                  <ActivityIndicator color={colors.tint} />
+                  <ThemedText style={{ color: colors.icon, fontSize: 13 }}>Putting together your reflection...</ThemedText>
+                </ThemedView>
+              ) : (
+                <ThemedText style={{ fontSize: 14, lineHeight: 20 }}>{reflection?.content ?? 'No reflection yet.'}</ThemedText>
+              )}
+            </ThemedView>
+          )}
 
           {habits.length > 0 && (
             <ThemedView style={styles.segmented}>
@@ -134,6 +229,24 @@ const styles = StyleSheet.create({
   },
   header: {
     gap: 4,
+  },
+  coachCard: {
+    gap: 12,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1.5,
+  },
+  coachHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  coachLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  coachDivider: {
+    borderBottomWidth: 1,
   },
   segmented: {
     flexDirection: 'row',
