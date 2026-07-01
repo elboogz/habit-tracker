@@ -36,8 +36,7 @@ export default function TodayScreen() {
 
   const today = dayKey();
   const { habits, logs, challenges } = state;
-  const activeChallenge = challenges.find((challenge) => challenge.status === 'active');
-  const activeProgress = activeChallenge ? challengeProgress(activeChallenge, habits, logs) : null;
+  const activeChallenges = challenges.filter((challenge) => challenge.status === 'active');
 
   // Mark challenges as failed once a day passes without completion — keeps the
   // Challenges tab honest without requiring the user to do anything.
@@ -124,21 +123,27 @@ export default function TodayScreen() {
             )}
           </ThemedView>
 
-          {activeChallenge && activeProgress && activeProgress.habits.length > 0 && (
-            <Pressable onPress={() => router.push('/(tabs)/challenges')}>
-              <ThemedView style={[styles.challengeBanner, { borderColor: colors.tint }]}>
-                <ThemedText type="defaultSemiBold">
-                  🚩 Day {activeProgress.daysElapsed} of {activeProgress.totalDays} challenge
-                </ThemedText>
-                <ThemedText style={{ color: colors.icon, fontSize: 14 }}>
-                  {activeProgress.habits.map((h) => h.emoji).join(' ')}{' '}
-                  {activeProgress.habits.length === 1
-                    ? activeProgress.habits[0].name
-                    : `${activeProgress.habits.length} habits`}{' '}
-                  — {activeProgress.todayDone ? "today's set is locked in" : 'log them all today to keep your run alive'}
-                </ThemedText>
-              </ThemedView>
-            </Pressable>
+          {activeChallenges.length > 0 && (
+            <ThemedView style={{ gap: 8 }}>
+              {activeChallenges.map((challenge) => {
+                const progress = challengeProgress(challenge, habits, logs);
+                if (progress.habits.length === 0) return null;
+                return (
+                  <Pressable key={challenge.id} onPress={() => router.push('/(tabs)/challenges')}>
+                    <ThemedView style={[styles.challengeBanner, { borderColor: colors.tint }]}>
+                      <ThemedText type="defaultSemiBold">
+                        🚩 Day {progress.daysElapsed} of {progress.totalDays} challenge
+                      </ThemedText>
+                      <ThemedText style={{ color: colors.icon, fontSize: 14 }}>
+                        {progress.habits.map((h) => h.emoji).join(' ')}{' '}
+                        {progress.habits.length === 1 ? progress.habits[0].name : `${progress.habits.length} habits`}{' '}
+                        — {progress.todayDone ? "today's set is locked in" : 'log them all today to keep your run alive'}
+                      </ThemedText>
+                    </ThemedView>
+                  </Pressable>
+                );
+              })}
+            </ThemedView>
           )}
 
           <ThemedView style={styles.list}>

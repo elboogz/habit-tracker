@@ -63,6 +63,7 @@ type Action =
   | { type: 'debugBackfillLogs'; habitId: string; dates: string[] }
   | { type: 'debugAdvanceChallenge'; challengeId: string }
   | { type: 'debugCompleteChallenge'; challengeId: string }
+  | { type: 'debugFillHistory'; mode: 'full' | 'alternating' }
   | { type: 'resetAllData' };
 
 function reducer(state: HabitState, action: Action): HabitState {
@@ -147,7 +148,14 @@ function reducer(state: HabitState, action: Action): HabitState {
       };
     case 'startChallenge': {
       if (action.habitIds.length === 0) return state;
-      if (state.challenges.some((challenge) => challenge.status === 'active')) return state;
+      // Multiple challenges can run at once as long as they don't share a habit — a habit can
+      // only belong to one active challenge at a time, since challengeProgress requires every
+      // included habit to be done to count a day.
+      const overlapsActiveChallenge = state.challenges.some(
+        (challenge) =>
+          challenge.status === 'active' && challenge.habitIds.some((id) => action.habitIds.includes(id)),
+      );
+      if (overlapsActiveChallenge) return state;
       const challenge: Challenge = {
         id: Crypto.randomUUID(),
         habitIds: action.habitIds,
@@ -258,6 +266,32 @@ function reducer(state: HabitState, action: Action): HabitState {
         ),
       };
     }
+    case 'debugFillHistory': {
+      const today = dayKey();
+      const dates: string[] = [];
+      for (let i = 29; i >= 0; i -= 1) {
+        dates.push(addDays(today, -i));
+      }
+      const dateSet = new Set(dates);
+      const now = new Date().toISOString();
+      // Clear all logs in the window first so the fill is idempotent and alternating mode
+      // correctly leaves odd-indexed habits with zero completions in the window.
+      let logs = state.logs.filter((log) => !dateSet.has(log.date));
+      state.habits.forEach((habit, index) => {
+        if (action.mode === 'alternating' && index % 2 !== 0) return;
+        const amount = habit.type === 'count' ? (habit.targetCount ?? 1) : 1;
+        const newLogs: HabitLog[] = dates.map((date) => ({
+          id: `${habit.id}-debug-fill-${date}`,
+          habitId: habit.id,
+          date,
+          count: amount,
+          loggedAt: now,
+          updatedAt: now,
+        }));
+        logs = [...logs, ...newLogs];
+      });
+      return { ...state, logs };
+    }
     case 'resetAllData':
       return { ...initialState };
     default:
@@ -294,6 +328,8 @@ type HabitStore = {
   debugAdvanceChallenge: (challengeId: string) => void;
   /** Backfills every day of a challenge (including today) and marks it completed — dev tools only. */
   debugCompleteChallenge: (challengeId: string) => void;
+  /** Fills the last 30 days of logs for all habits (full) or every other habit (alternating) — dev tools only. */
+  debugFillHistory: (mode: 'full' | 'alternating') => void;
   /** Wipes all app data back to a fresh install, including onboarding — dev tools only. */
   resetAllData: () => void;
 };
@@ -452,6 +488,7 @@ export function HabitStoreProvider({ children }: { children: ReactNode }) {
       debugBackfillLogs: (habitId, dates) => dispatch({ type: 'debugBackfillLogs', habitId, dates }),
       debugAdvanceChallenge: (challengeId) => dispatch({ type: 'debugAdvanceChallenge', challengeId }),
       debugCompleteChallenge: (challengeId) => dispatch({ type: 'debugCompleteChallenge', challengeId }),
+      debugFillHistory: (mode) => dispatch({ type: 'debugFillHistory', mode }),
       resetAllData: () => {
         // Local-only preview reset — must not propagate as a mass-delete to the real account.
         skipNextDiffRef.current = true;

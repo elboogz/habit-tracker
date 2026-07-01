@@ -8,7 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { type InsightKind, regenerateInsight } from '@/lib/ai-coach';
+import { getInsight, type InsightKind, regenerateInsight } from '@/lib/ai-coach';
 import { useAuth } from '@/lib/auth-store';
 import { disableCoachPush, enableCoachPush, getCoachPushPrefs } from '@/lib/coach-push';
 import { alertMessage, confirmAction } from '@/lib/confirm';
@@ -29,6 +29,7 @@ export default function SettingsScreen() {
     debugBackfillLogs,
     debugAdvanceChallenge,
     debugCompleteChallenge,
+    debugFillHistory,
     resetOnboarding,
     resetAllData,
   } = useHabitStore();
@@ -44,6 +45,8 @@ export default function SettingsScreen() {
   const [coachPushMinute, setCoachPushMinute] = useState(0);
   const [coachPushBusy, setCoachPushBusy] = useState(false);
   const [regeneratingKind, setRegeneratingKind] = useState<InsightKind | null>(null);
+  const [fillingHistory, setFillingHistory] = useState<'full' | 'alternating' | null>(null);
+  const [simulatingPush, setSimulatingPush] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -92,6 +95,40 @@ export default function SettingsScreen() {
     const result = await enableCoachPush(user.id, formatCoachPushTime(hour, minute));
     setCoachPushBusy(false);
     if (result.error) alertMessage("Couldn't update AI Coach time", result.error);
+  }
+
+  async function handleSimulatePush() {
+    if (typeof Notification === 'undefined') {
+      alertMessage('Not supported', 'Browser notifications are only available on web (Chrome / Safari).');
+      return;
+    }
+    if (!window.isSecureContext) {
+      alertMessage(
+        'HTTPS required',
+        'Chrome blocks notifications on plain HTTP pages. Open the app at localhost:8081 (not the IP address) in your browser, then try again.',
+      );
+      return;
+    }
+    const permission =
+      Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+    if (permission !== 'granted') {
+      alertMessage('Permission denied', 'Enable notifications for this site in your browser settings, then try again.');
+      return;
+    }
+    setSimulatingPush(true);
+    const insight = await getInsight('nudge');
+    setSimulatingPush(false);
+    if (!insight) {
+      alertMessage('No insight yet', 'Log some habits first (or use "Fill all" above), then try again.');
+      return;
+    }
+    new Notification('🧠 AI Coach', { body: insight.content });
+  }
+
+  function handleFillHistory(mode: 'full' | 'alternating') {
+    debugFillHistory(mode);
+    setFillingHistory(mode);
+    setTimeout(() => setFillingHistory(null), 2000);
   }
 
   async function handleRegenerateInsight(kind: InsightKind) {
@@ -256,11 +293,18 @@ export default function SettingsScreen() {
               <Switch
                 value={coachPushEnabled}
                 onValueChange={handleCoachPushToggle}
-                disabled={coachPushBusy || !coachPushLoaded}
+                disabled={coachPushBusy || !coachPushLoaded || Platform.OS === 'web'}
                 trackColor={{ false: colors.icon, true: colors.tint }}
                 thumbColor="#fff"
               />
             </ThemedView>
+            {Platform.OS === 'web' && (
+              <ThemedText style={{ color: colors.icon, fontSize: 12, lineHeight: 17 }}>
+                Push notifications require the iOS or Android app — this setting is not available in the
+                browser. Use &quot;Send test push&quot; in Developer tools to preview coaching content in
+                Chrome or Safari instead.
+              </ThemedText>
+            )}
 
             {coachPushEnabled && (
               <ThemedView style={{ gap: 8 }}>
@@ -406,6 +450,54 @@ export default function SettingsScreen() {
 
               {state.habits.length > 0 && (
                 <ThemedView style={{ gap: 8 }}>
+                  <ThemedText style={{ fontSize: 13, fontWeight: '600' }}>Simulate 30-day history</ThemedText>
+                  <ThemedView style={{ flexDirection: 'row', gap: 8 }}>
+                    <Pressable
+                      onPress={() => handleFillHistory('full')}
+                      disabled={fillingHistory !== null}
+                      style={[
+                        styles.devButton,
+                        { borderColor: colors.tint, flex: 1, alignItems: 'center' },
+                        fillingHistory === 'full' && { backgroundColor: colors.tint },
+                      ]}>
+                      <ThemedText
+                        style={{
+                          color: fillingHistory === 'full' ? colors.background : colors.tint,
+                          fontWeight: '600',
+                          fontSize: 13,
+                        }}>
+                        {fillingHistory === 'full' ? 'Done ✓' : 'Fill all (100%)'}
+                      </ThemedText>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => handleFillHistory('alternating')}
+                      disabled={fillingHistory !== null}
+                      style={[
+                        styles.devButton,
+                        { borderColor: colors.tint, flex: 1, alignItems: 'center' },
+                        fillingHistory === 'alternating' && { backgroundColor: colors.tint },
+                      ]}>
+                      <ThemedText
+                        style={{
+                          color: fillingHistory === 'alternating' ? colors.background : colors.tint,
+                          fontWeight: '600',
+                          fontSize: 13,
+                        }}>
+                        {fillingHistory === 'alternating' ? 'Done ✓' : 'Alternate (~50%)'}
+                      </ThemedText>
+                    </Pressable>
+                  </ThemedView>
+                  <ThemedText style={{ color: colors.icon, fontSize: 12, lineHeight: 17 }}>
+                    Backfills the last 30 days across all habits. &quot;Fill all&quot; gives 100% completion on every
+                    habit. &quot;Alternate&quot; fills every other habit (0% on odd ones) so the coach has a mix of
+                    strengths and gaps to comment on. Then use &quot;Regenerate&quot; below to refresh the Coach
+                    card with real AI output.
+                  </ThemedText>
+                </ThemedView>
+              )}
+
+              {state.habits.length > 0 && (
+                <ThemedView style={{ gap: 8 }}>
                   <ThemedText style={{ fontSize: 13, fontWeight: '600' }}>AI Coach insights</ThemedText>
                   <ThemedView style={{ flexDirection: 'row', gap: 8 }}>
                     {(['nudge', 'weekly', 'monthly'] as const).map((kind) => (
@@ -423,6 +515,24 @@ export default function SettingsScreen() {
                   <ThemedText style={{ color: colors.icon, fontSize: 12, lineHeight: 17 }}>
                     Bypasses the freshness cache and calls Claude again right now, showing the new text in an alert
                     here so you can check tone and content without waiting or leaving Settings.
+                  </ThemedText>
+                </ThemedView>
+              )}
+
+              {state.habits.length > 0 && (
+                <ThemedView style={{ gap: 8 }}>
+                  <ThemedText style={{ fontSize: 13, fontWeight: '600' }}>Simulate push notification</ThemedText>
+                  <Pressable
+                    onPress={handleSimulatePush}
+                    disabled={simulatingPush}
+                    style={[styles.devButton, { borderColor: colors.tint, alignItems: 'center' }]}>
+                    <ThemedText style={{ color: colors.tint, fontWeight: '600', fontSize: 13 }}>
+                      {simulatingPush ? 'Fetching nudge…' : '🔔 Send test push'}
+                    </ThemedText>
+                  </Pressable>
+                  <ThemedText style={{ color: colors.icon, fontSize: 12, lineHeight: 17 }}>
+                    Fires a real browser notification using today&apos;s AI nudge — same title and body as the
+                    scheduled push. Works in Chrome and Safari on web; grant permission when prompted.
                   </ThemedText>
                 </ThemedView>
               )}

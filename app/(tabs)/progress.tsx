@@ -91,6 +91,7 @@ export default function ProgressScreen() {
                 <ThemedText type="defaultSemiBold">🧠 Coach</ThemedText>
               </ThemedView>
 
+              <ThemedText style={{ color: colors.icon, fontSize: 12, fontWeight: '600' }}>💡 Today&apos;s tip</ThemedText>
               {nudgeLoading ? (
                 <ThemedView style={styles.coachLoading}>
                   <ActivityIndicator color={colors.tint} />
@@ -111,7 +112,7 @@ export default function ProgressScreen() {
                     reflectionMode === 'weekly' && { backgroundColor: colors.tint, borderColor: colors.tint },
                   ]}>
                   <ThemedText style={{ color: reflectionMode === 'weekly' ? colors.background : colors.text, fontSize: 13 }}>
-                    This week
+                    📅 This week
                   </ThemedText>
                 </Pressable>
                 <Pressable
@@ -122,11 +123,14 @@ export default function ProgressScreen() {
                     reflectionMode === 'monthly' && { backgroundColor: colors.tint, borderColor: colors.tint },
                   ]}>
                   <ThemedText style={{ color: reflectionMode === 'monthly' ? colors.background : colors.text, fontSize: 13 }}>
-                    This month
+                    🗓️ This month
                   </ThemedText>
                 </Pressable>
               </ThemedView>
 
+              <ThemedText style={{ color: colors.icon, fontSize: 12, fontWeight: '600' }}>
+                {reflectionMode === 'weekly' ? '📅 Weekly reflection' : '🗓️ Monthly reflection'}
+              </ThemedText>
               {reflectionLoading ? (
                 <ThemedView style={styles.coachLoading}>
                   <ActivityIndicator color={colors.tint} />
@@ -141,17 +145,6 @@ export default function ProgressScreen() {
           {habits.length > 0 && (
             <ThemedView style={styles.segmented}>
               <Pressable
-                onPress={() => setViewMode('14days')}
-                style={[
-                  styles.segment,
-                  { borderColor: colors.icon },
-                  viewMode === '14days' && { backgroundColor: colors.tint, borderColor: colors.tint },
-                ]}>
-                <ThemedText style={{ color: viewMode === '14days' ? colors.background : colors.text }}>
-                  Last 14 days
-                </ThemedText>
-              </Pressable>
-              <Pressable
                 onPress={() => setViewMode('7days')}
                 style={[
                   styles.segment,
@@ -160,6 +153,17 @@ export default function ProgressScreen() {
                 ]}>
                 <ThemedText style={{ color: viewMode === '7days' ? colors.background : colors.text }}>
                   Last 7 days
+                </ThemedText>
+              </Pressable>
+              <Pressable
+                onPress={() => setViewMode('14days')}
+                style={[
+                  styles.segment,
+                  { borderColor: colors.icon },
+                  viewMode === '14days' && { backgroundColor: colors.tint, borderColor: colors.tint },
+                ]}>
+                <ThemedText style={{ color: viewMode === '14days' ? colors.background : colors.text }}>
+                  Last 14 days
                 </ThemedText>
               </Pressable>
             </ThemedView>

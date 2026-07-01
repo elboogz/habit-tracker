@@ -26,12 +26,14 @@ export default function ChallengesScreen() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [duration, setDuration] = useState(3);
 
-  const activeChallenge = challenges.find((c) => c.status === 'active');
-  const activeProgress = activeChallenge ? challengeProgress(activeChallenge, habits, logs) : null;
+  const activeChallenges = challenges.filter((c) => c.status === 'active');
   const past = challenges.filter((c) => c.status !== 'active').slice().reverse();
-  // Habits with the same name (e.g. accidentally added twice) should only offer one pick here.
+  const habitIdsInActiveChallenge = new Set(activeChallenges.flatMap((c) => c.habitIds));
+  // Habits with the same name (e.g. accidentally added twice) should only offer one pick here,
+  // and habits already part of an active challenge can't be double-booked into another one.
   const pickableHabits = habits.filter(
-    (habit, index) => habits.findIndex((other) => other.name === habit.name) === index,
+    (habit, index) =>
+      habits.findIndex((other) => other.name === habit.name) === index && !habitIdsInActiveChallenge.has(habit.id),
   );
 
   function toggleHabit(habitId: string) {
@@ -58,102 +60,111 @@ export default function ChallengesScreen() {
             </ThemedText>
           </ThemedView>
 
-          {activeChallenge && activeProgress && activeProgress.habits.length > 0 && (
+          {activeChallenges.length > 0 && (
             <ThemedView style={styles.section}>
               <ThemedText type="defaultSemiBold">Active</ThemedText>
-              <ThemedView style={[styles.activeCard, { borderColor: colors.tint }]}>
-                <ThemedText type="defaultSemiBold">
-                  🚩 {activeProgress.habits.map((h) => h.emoji).join(' ')}{' '}
-                  {activeProgress.habits.map((h) => h.name).join(', ')}
-                </ThemedText>
-                <ThemedText style={{ color: colors.icon, fontSize: 14 }}>
-                  Day {activeProgress.daysElapsed} of {activeProgress.totalDays}
-                  {activeProgress.todayDone ? ' — today is locked in!' : ' — log them all today to keep going'}
-                </ThemedText>
-                <DayDots progress={activeProgress} tint={colors.tint} muted={colors.icon} />
+              <ThemedView style={{ gap: 12 }}>
+                {activeChallenges.map((challenge) => {
+                  const progress = challengeProgress(challenge, habits, logs);
+                  if (progress.habits.length === 0) return null;
+                  return (
+                    <ThemedView key={challenge.id} style={[styles.activeCard, { borderColor: colors.tint }]}>
+                      <ThemedText type="defaultSemiBold">
+                        🚩 {progress.habits.map((h) => h.emoji).join(' ')} {progress.habits.map((h) => h.name).join(', ')}
+                      </ThemedText>
+                      <ThemedText style={{ color: colors.icon, fontSize: 14 }}>
+                        Day {progress.daysElapsed} of {progress.totalDays}
+                        {progress.todayDone ? ' — today is locked in!' : ' — log them all today to keep going'}
+                      </ThemedText>
+                      <DayDots progress={progress} tint={colors.tint} muted={colors.icon} />
+                    </ThemedView>
+                  );
+                })}
               </ThemedView>
             </ThemedView>
           )}
 
-          {!activeChallenge && (
-            <ThemedView style={styles.section}>
-              <ThemedText type="defaultSemiBold">Start a new challenge</ThemedText>
-              {habits.length === 0 ? (
-                <ThemedText style={{ color: colors.icon, fontSize: 14 }}>
-                  Add a habit on the Today tab, then come back here to challenge yourself.
-                </ThemedText>
-              ) : (
-                <>
-                  <ThemedText style={{ color: colors.icon, fontSize: 13 }}>Choose the habits to include</ThemedText>
-                  <ThemedView style={{ gap: 8 }}>
-                    {pickableHabits.map((habit) => {
-                      const selected = selectedIds.includes(habit.id);
-                      return (
-                        <Pressable
-                          key={habit.id}
-                          onPress={() => toggleHabit(habit.id)}
-                          style={({ pressed }) => [
-                            styles.habitOption,
-                            { borderColor: selected ? colors.tint : colors.icon },
-                            selected && { backgroundColor: colors.tint + '22' },
-                            pressed && { opacity: 0.7 },
-                          ]}>
-                          <ThemedText>
-                            {habit.emoji} {habit.name}
-                          </ThemedText>
-                          <ThemedView
-                            style={[
-                              styles.checkbox,
-                              { borderColor: colors.tint },
-                              selected && { backgroundColor: colors.tint },
-                            ]}>
-                            {selected && (
-                              <ThemedText style={{ color: colors.background, fontSize: 14 }}>✓</ThemedText>
-                            )}
-                          </ThemedView>
-                        </Pressable>
-                      );
-                    })}
-                  </ThemedView>
-
-                  <ThemedText style={{ color: colors.icon, fontSize: 13 }}>How long?</ThemedText>
-                  <ThemedView style={styles.durationRow}>
-                    {DURATION_OPTIONS.map((days) => (
+          <ThemedView style={styles.section}>
+            <ThemedText type="defaultSemiBold">Start a new challenge</ThemedText>
+            {habits.length === 0 ? (
+              <ThemedText style={{ color: colors.icon, fontSize: 14 }}>
+                Add a habit on the Today tab, then come back here to challenge yourself.
+              </ThemedText>
+            ) : pickableHabits.length === 0 ? (
+              <ThemedText style={{ color: colors.icon, fontSize: 14 }}>
+                All your habits are already part of an active challenge. Add another habit to start a new one.
+              </ThemedText>
+            ) : (
+              <>
+                <ThemedText style={{ color: colors.icon, fontSize: 13 }}>Choose the habits to include</ThemedText>
+                <ThemedView style={{ gap: 8 }}>
+                  {pickableHabits.map((habit) => {
+                    const selected = selectedIds.includes(habit.id);
+                    return (
                       <Pressable
-                        key={days}
-                        onPress={() => setDuration(days)}
-                        style={[
-                          styles.durationChip,
-                          { borderColor: colors.tint },
-                          duration === days && { backgroundColor: colors.tint },
+                        key={habit.id}
+                        onPress={() => toggleHabit(habit.id)}
+                        style={({ pressed }) => [
+                          styles.habitOption,
+                          { borderColor: selected ? colors.tint : colors.icon },
+                          selected && { backgroundColor: colors.tint + '22' },
+                          pressed && { opacity: 0.7 },
                         ]}>
-                        <ThemedText
-                          style={{
-                            color: duration === days ? colors.background : colors.tint,
-                            fontWeight: '600',
-                          }}>
-                          {days}-day
+                        <ThemedText>
+                          {habit.emoji} {habit.name}
                         </ThemedText>
+                        <ThemedView
+                          style={[
+                            styles.checkbox,
+                            { borderColor: colors.tint },
+                            selected && { backgroundColor: colors.tint },
+                          ]}>
+                          {selected && (
+                            <ThemedText style={{ color: colors.background, fontSize: 14 }}>✓</ThemedText>
+                          )}
+                        </ThemedView>
                       </Pressable>
-                    ))}
-                  </ThemedView>
+                    );
+                  })}
+                </ThemedView>
 
-                  <Pressable
-                    onPress={handleStart}
-                    disabled={selectedIds.length === 0}
-                    style={[
-                      styles.startButton,
-                      { backgroundColor: colors.tint },
-                      selectedIds.length === 0 && { opacity: 0.4 },
-                    ]}>
-                    <ThemedText style={{ color: colors.background, fontWeight: '600', fontSize: 16 }}>
-                      Start {duration}-day challenge
-                    </ThemedText>
-                  </Pressable>
-                </>
-              )}
-            </ThemedView>
-          )}
+                <ThemedText style={{ color: colors.icon, fontSize: 13 }}>How long?</ThemedText>
+                <ThemedView style={styles.durationRow}>
+                  {DURATION_OPTIONS.map((days) => (
+                    <Pressable
+                      key={days}
+                      onPress={() => setDuration(days)}
+                      style={[
+                        styles.durationChip,
+                        { borderColor: colors.tint },
+                        duration === days && { backgroundColor: colors.tint },
+                      ]}>
+                      <ThemedText
+                        style={{
+                          color: duration === days ? colors.background : colors.tint,
+                          fontWeight: '600',
+                        }}>
+                        {days}-day
+                      </ThemedText>
+                    </Pressable>
+                  ))}
+                </ThemedView>
+
+                <Pressable
+                  onPress={handleStart}
+                  disabled={selectedIds.length === 0}
+                  style={[
+                    styles.startButton,
+                    { backgroundColor: colors.tint },
+                    selectedIds.length === 0 && { opacity: 0.4 },
+                  ]}>
+                  <ThemedText style={{ color: colors.background, fontWeight: '600', fontSize: 16 }}>
+                    Start {duration}-day challenge
+                  </ThemedText>
+                </Pressable>
+              </>
+            )}
+          </ThemedView>
 
           {past.length > 0 && (
             <ThemedView style={styles.section}>

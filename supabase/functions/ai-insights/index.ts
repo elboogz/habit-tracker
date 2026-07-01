@@ -16,13 +16,11 @@ const KIND_CONFIG: Record<Kind, { dbKind: string; freshnessHours: number; window
   monthly: { dbKind: 'monthly_reflection', freshnessHours: 24 * 30, windowDays: 30, maxTokens: 700, effort: 'medium' },
 };
 
-// Shared style rules: em dashes are a recognizable "AI tell" (use commas or separate sentences
-// instead), and emoji should be consistently present (not just allowed) so the tone doesn't feel
-// random from one nudge to the next.
+// Shared style rules: em dashes are a recognizable "AI tell" — use commas or separate sentences
+// instead. Emoji are handled by the app UI (section titles), not the body text.
 const STYLE_RULES =
   'Write in plain, natural sentences — never use em dashes (—); use commas or split into separate ' +
-  'sentences instead. Always include exactly one relevant emoji somewhere in the message. Plain ' +
-  'text only, no markdown.';
+  'sentences instead. Do not include any emoji in the text. Plain text only, no markdown.';
 
 const SYSTEM_PROMPTS: Record<Kind, string> = {
   nudge:
@@ -53,13 +51,14 @@ function addDays(key: string, amount: number): string {
   return dayKey(new Date(year, month - 1, day + amount));
 }
 
-// The prompt asks Claude to avoid em dashes, but it doesn't reliably comply, so this
-// deterministically removes any that slip through. A dash before a capital letter usually
-// joins two sentences (becomes ". X"); otherwise it's a clause break (becomes ", ").
-function stripEmDashes(text: string): string {
+// The prompt asks Claude to avoid em dashes and emoji in the body, but it doesn't always comply.
+// This deterministically enforces both: dashes are replaced with commas/sentence breaks, and any
+// emoji that slip through are stripped (the UI adds its own emoji to section titles).
+function sanitizeContent(text: string): string {
   return text
     .replace(/\s*[—–]\s*([A-Z])/g, '. $1')
     .replace(/\s*[—–]\s*/g, ', ')
+    .replace(/\p{Extended_Pictographic}/gu, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
@@ -143,7 +142,7 @@ Deno.serve(async (req) => {
 
     if (existing) {
       return new Response(
-        JSON.stringify({ content: stripEmDashes(existing.content), createdAt: existing.created_at, kind }),
+        JSON.stringify({ content: sanitizeContent(existing.content), createdAt: existing.created_at, kind }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
@@ -188,7 +187,7 @@ Deno.serve(async (req) => {
         },
       ],
     });
-    const content = stripEmDashes(response.content.find((block) => block.type === 'text')?.text ?? '');
+    const content = sanitizeContent(response.content.find((block) => block.type === 'text')?.text ?? '');
 
     const periodEnd = today;
     const periodStart = kind === 'nudge' ? null : windowStart;
