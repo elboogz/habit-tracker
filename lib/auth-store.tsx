@@ -41,9 +41,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [passwordRecoveryActive, setPasswordRecoveryActive] = useState(false);
 
   useEffect(() => {
+    // Fast path: read the cached session from AsyncStorage so the UI isn't blank
+    // while we wait for the network. setInitializing(false) happens here so that
+    // the root navigator can render immediately.
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setInitializing(false);
+
+      // Background validation: verify the JWT server-side. If the token is
+      // invalid or has been revoked (not just expired — the client auto-refreshes
+      // those), clear the local session so the user is routed back to sign-in.
+      // We skip this when there is no local session at all to avoid an
+      // unnecessary network round-trip on a fresh install.
+      if (data.session) {
+        supabase.auth.getUser().then(({ error }) => {
+          if (error) setSession(null);
+        });
+      }
     });
 
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, newSession) => {

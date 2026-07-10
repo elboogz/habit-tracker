@@ -1,3 +1,5 @@
+// @ts-nocheck — Deno runtime: npm: specifiers and the Deno global are not recognised by the
+// project's Node tsconfig. The code is type-safe under Deno's own checker (deno check).
 // Paste this into Supabase Dashboard -> Edge Functions -> Create a new function ("send-coaching-push").
 // Triggered by Supabase Cron every 15 minutes. Uses the service-role key (auto-provided to every
 // Edge Function as SUPABASE_SERVICE_ROLE_KEY) since this reads/writes across all users rather than
@@ -141,7 +143,36 @@ async function sendExpoPush(tokens: string[], body: string) {
   });
 }
 
-Deno.serve(async (_req) => {
+Deno.serve(async (req) => {
+  // This function uses the service-role key and runs across all users — it must only
+  // be callable by the Supabase Cron scheduler, not by arbitrary callers.
+  // Set CRON_SECRET as a Supabase Edge Function secret and pass it as the
+  // x-cron-secret header in the Supabase Cron scheduler configuration.
+  // Reject any HTTP method other than POST (cron uses POST).
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  const cronSecret = Deno.env.get('CRON_SECRET');
+  if (!cronSecret) {
+    // Fail closed: if the secret is not configured, refuse all requests rather than
+    // accidentally running with service-role privileges for any caller.
+    console.error('send-coaching-push: CRON_SECRET secret is not configured');
+    return new Response(JSON.stringify({ error: 'Service misconfigured' }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+  if (req.headers.get('x-cron-secret') !== cronSecret) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
   const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY') });
   const now = new Date();

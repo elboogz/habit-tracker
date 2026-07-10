@@ -1,11 +1,17 @@
+// @ts-nocheck — Deno runtime: npm: specifiers and the Deno global are not recognised by the
+// project's Node tsconfig. The code is type-safe under Deno's own checker (deno check).
 // Paste this into Supabase Dashboard -> Edge Functions -> Create a new function ("ai-insights").
 // Set the ANTHROPIC_API_KEY secret under Edge Functions -> Secrets before invoking.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import Anthropic from 'npm:@anthropic-ai/sdk';
 
+// Set the ALLOWED_ORIGIN secret in Supabase Edge Function secrets to your production
+// web domain (e.g. https://your-app.expo.app). Falls back to localhost for local dev.
+// The native iOS/Android app sends no Origin header so CORS is irrelevant there.
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') ?? 'http://localhost:8081',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Vary': 'Origin',
 };
 
 type Kind = 'nudge' | 'weekly' | 'monthly';
@@ -97,13 +103,30 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { kind } = (await req.json()) as { kind?: Kind };
-    if (!kind || !KIND_CONFIG[kind]) {
+    // Validate request body before touching anything else.
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    if (typeof body !== 'object' || body === null) {
+      return new Response(JSON.stringify({ error: 'Body must be a JSON object' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    const { kind: kindRaw } = body as Record<string, unknown>;
+    if (typeof kindRaw !== 'string' || !(kindRaw in KIND_CONFIG)) {
       return new Response(JSON.stringify({ error: 'Invalid kind' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    const kind = kindRaw as Kind;
     const config = KIND_CONFIG[kind];
 
     const authHeader = req.headers.get('Authorization');
@@ -147,7 +170,23 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 2. Pull the relevant window of habits/logs (RLS already scopes these to this user).
+    // 2. Per-user rate limit: max 10 new Claude calls per user per 24 hours across all kinds.
+    // Cached responses (returned above) never count against this limit. With 3 kinds and
+    // their respective freshness windows the legitimate maximum is 3 calls/day; 10 gives
+    // headroom for the cron nudge while blocking scripted multi-account abuse.
+    const rl24hStart = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { count: recentCallCount } = await supabase
+      .from('ai_insights')
+      .select('id', { count: 'exact', head: true })
+      .gt('created_at', rl24hStart);
+    if ((recentCallCount ?? 0) >= 10) {
+      return new Response(JSON.stringify({ error: 'Rate limit exceeded. Try again later.' }), {
+        status: 429,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '3600' },
+      });
+    }
+
+    // 4. Pull the relevant window of habits/logs (RLS already scopes these to this user).
     const today = dayKey(new Date());
     const windowStart = addDays(today, -config.windowDays);
 
@@ -166,7 +205,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 3. Summarize stats per habit for the prompt.
+    // 5. Summarize stats per habit for the prompt.
     const summary = habits.map((habit: HabitRow) => ({
       name: habit.name,
       emoji: habit.emoji,

@@ -513,8 +513,9 @@ export default function SettingsScreen() {
                     ))}
                   </ThemedView>
                   <ThemedText style={{ color: colors.icon, fontSize: 12, lineHeight: 17 }}>
-                    Bypasses the freshness cache and calls Claude again right now, showing the new text in an alert
-                    here so you can check tone and content without waiting or leaving Settings.
+                    Fetches the current AI insight (uses freshness cache). To force a brand-new Claude call,
+                    first delete the relevant row in the Supabase dashboard (Table Editor → ai_insights), then
+                    tap Regenerate again.
                   </ThemedText>
                 </ThemedView>
               )}

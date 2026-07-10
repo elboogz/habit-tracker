@@ -19,5 +19,25 @@ create index if not exists ai_insights_user_kind_created_idx
 
 alter table public.ai_insights enable row level security;
 
-create policy "Individuals can manage their own insights" on public.ai_insights
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+-- Users can read their own insights (for the in-app Coach card).
+create policy "ai_insights_select" on public.ai_insights
+  for select using (auth.uid() = user_id);
+
+-- The ai-insights Edge Function (running under the user's JWT) can insert new insights.
+-- No DELETE or UPDATE policy: only service-role callers (Edge Functions) can remove rows,
+-- so users cannot delete their cached insights to bypass the Claude API freshness limit.
+create policy "ai_insights_insert" on public.ai_insights
+  for insert with check (auth.uid() = user_id);
+
+-- ── MIGRATION (existing installations) ───────────────────────────────────────
+-- Run the following in the Supabase SQL Editor to upgrade an already-deployed schema:
+--
+-- drop policy if exists "Individuals can manage their own insights"
+--   on public.ai_insights;
+--
+-- create policy "ai_insights_select" on public.ai_insights
+--   for select using (auth.uid() = user_id);
+--
+-- create policy "ai_insights_insert" on public.ai_insights
+--   for insert with check (auth.uid() = user_id);
+-- ─────────────────────────────────────────────────────────────────────────────

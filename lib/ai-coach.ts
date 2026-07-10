@@ -20,17 +20,14 @@ export async function getInsight(kind: InsightKind): Promise<Insight | null> {
   }
 }
 
-const DB_KIND: Record<InsightKind, string> = {
-  nudge: 'nudge',
-  weekly: 'weekly_reflection',
-  monthly: 'monthly_reflection',
-};
-
 /**
- * Deletes this user's cached insight of this kind, then fetches a fresh one — bypassing the
- * Edge Function's freshness window. Dev-tools only: this calls Claude on every tap.
+ * Fetches the current insight for this kind, bypassing no cache (the RLS policy no longer
+ * grants DELETE, so forced regeneration via client is intentionally disabled to protect
+ * against Claude API cost abuse). Dev-tools only.
+ *
+ * To force fresh generation during development: manually delete the row in the Supabase
+ * dashboard (Table Editor → ai_insights) and then tap Regenerate again.
  */
 export async function regenerateInsight(kind: InsightKind): Promise<Insight | null> {
-  await supabase.from('ai_insights').delete().eq('kind', DB_KIND[kind]);
   return getInsight(kind);
 }

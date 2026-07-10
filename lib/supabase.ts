@@ -17,7 +17,16 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     // AsyncStorage's web shim touches `window` with no guard, which crashes Expo
     // Router's server render pass (Node, no `window`). Web falls back to
-    // supabase-js's own default storage, which already guards for that.
+    // supabase-js's own default storage (localStorage).
+    //
+    // Accepted risk: localStorage is readable by any JS on the page, making
+    // session tokens XSS-accessible on web. This is acceptable because:
+    //   1. The app has no HTML rendering (no dangerouslySetInnerHTML, no v-html),
+    //      so there is no XSS attack surface to exploit it today.
+    //   2. The web build is a secondary target; native (AsyncStorage, app-sandboxed)
+    //      is the primary deployment.
+    // If a future change introduces user-generated HTML rendering, switch to
+    // cookie-based storage (supabase-js CookieStorage or an httpOnly proxy).
     ...(Platform.OS === 'web' ? {} : { storage: AsyncStorage }),
     autoRefreshToken: true,
     persistSession: true,

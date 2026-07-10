@@ -67,12 +67,12 @@ function RootNavigator() {
       </Stack.Protected>
       <Stack.Protected guard={!!session && state.hasOnboarded && !passwordRecoveryActive}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen
+          name="habit-form"
+          options={{ presentation: 'modal', headerShown: true, title: 'Habit', headerBackTitle: 'Cancel' }}
+        />
+        <Stack.Screen name="habit/[id]" options={{ headerShown: true }} />
       </Stack.Protected>
-      <Stack.Screen
-        name="habit-form"
-        options={{ presentation: 'modal', headerShown: true, title: 'Habit', headerBackTitle: 'Cancel' }}
-      />
-      <Stack.Screen name="habit/[id]" options={{ headerShown: true }} />
     </Stack>
   );
 }
