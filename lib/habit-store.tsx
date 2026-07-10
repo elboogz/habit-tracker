@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useReducer, useRef, useS
 import { AppState } from 'react-native';
 
 import { useAuth } from './auth-store';
-import { addDays, dayKey } from './habit-stats';
+import { addDays, challengeProgress, dayKey } from './habit-stats';
 import type { Challenge, Habit, HabitLog, HabitState, HabitType } from './habit-types';
 import { scheduleAllReminders } from './notifications';
 import { diffAndSync, enqueueFullUpload, pullRemoteChanges, pushPendingChanges, type RemoteChanges } from './supabase-sync';
@@ -444,6 +444,25 @@ export function HabitStoreProvider({ children }: { children: ReactNode }) {
     if (!hydrated) return;
     scheduleAllReminders(state.notifications, state.habits);
   }, [hydrated, state.notifications, state.habits]);
+
+  // Marks challenges as failed once a day passes without completion. Relocated here (Phase 2,
+  // see docs/phase-2-implementation-plan.md section 7) from a screen-level effect on the Today
+  // tab, so failure detection runs regardless of which screen is mounted, rather than only while
+  // Today happens to be open. Semantics are unchanged -- challengeProgress's isFailed rule (a
+  // single missed non-today day fails the challenge outright) is exactly as it was before Phase 2
+  // and is only redesigned in Phase 7. Threading schedulePeriods through is a no-op today: every
+  // habit still defaults to daily with zero periods, so isFailed's result is byte-for-byte
+  // identical to before this relocation (see lib/domain/habit-stats.test.ts's fixtures).
+  useEffect(() => {
+    if (!hydrated) return;
+    for (const challenge of state.challenges) {
+      if (challenge.status !== 'active') continue;
+      const progress = challengeProgress(challenge, state.habits, state.logs, state.schedulePeriods);
+      if (progress.isFailed) {
+        dispatch({ type: 'setChallengeStatus', challengeId: challenge.id, status: 'failed' });
+      }
+    }
+  }, [hydrated, state.challenges, state.habits, state.logs, state.schedulePeriods]);
 
   const store = useMemo<HabitStore>(
     () => ({

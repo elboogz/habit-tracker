@@ -1,27 +1,11 @@
 import type { Habit, HabitSchedulePeriod, ScheduleDays } from '../habit-types';
-import { addDays, dayKey } from './habit-stats';
+import { addDays, localDayKeyOf, parseDayKeyParts, weekdayOf } from './day-key';
 
 export type { HabitSchedulePeriod, ScheduleDays } from '../habit-types';
-
-export function parseDayKeyParts(key: string): { year: number; month: number; day: number } {
-  const [year, month, day] = key.split('-').map(Number);
-  return { year, month, day };
-}
-
-/**
- * 0 (Sunday) - 6 (Saturday) for a local day key, computed via the local Date constructor form
- * (never `new Date(key)`, which JS parses as UTC midnight and can report the wrong weekday for
- * roughly half the world's timezones once converted back to local time).
- */
-export function weekdayOf(key: string): number {
-  const { year, month, day } = parseDayKeyParts(key);
-  return new Date(year, month - 1, day).getDay();
-}
-
-/** Local day key for an ISO timestamp (e.g. Habit.createdAt) -- reuses dayKey's local-time formatting. */
-export function localDayKeyOf(isoTimestamp: string): string {
-  return dayKey(new Date(isoTimestamp));
-}
+// Re-exported so existing imports of these from './schedule' (this module's own test file, and
+// any future domain module) keep working -- day-key.ts is the canonical home now that
+// habit-stats.ts also needs it, without creating a circular import between the two.
+export { localDayKeyOf, parseDayKeyParts, weekdayOf };
 
 /**
  * Resolves the schedule/pause state in effect for `date`, per the habit's periods. With no

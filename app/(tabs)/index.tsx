@@ -1,5 +1,4 @@
 import { useRouter } from 'expo-router';
-import { useEffect } from 'react';
 import { Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -35,18 +34,13 @@ export default function TodayScreen() {
   const { celebration, fire, clear } = useCelebration(state.soundEnabled);
 
   const today = dayKey();
-  const { habits, logs, challenges } = state;
+  const { habits, logs, challenges, schedulePeriods } = state;
   const activeChallenges = challenges.filter((challenge) => challenge.status === 'active');
 
-  // Mark challenges as failed once a day passes without completion — keeps the
-  // Challenges tab honest without requiring the user to do anything.
-  useEffect(() => {
-    for (const challenge of challenges) {
-      if (challenge.status !== 'active') continue;
-      const progress = challengeProgress(challenge, habits, logs);
-      if (progress.isFailed) setChallengeStatus(challenge.id, 'failed');
-    }
-  }, [challenges, habits, logs, setChallengeStatus]);
+  // Challenge-failure detection used to live here as a screen-level effect (only evaluated while
+  // Today happened to be mounted); it now lives in HabitStoreProvider itself (see
+  // lib/habit-store.tsx) so it runs regardless of which screen is open. Semantics unchanged --
+  // see docs/phase-2-implementation-plan.md section 7.
 
   const completedCount = habits.filter((habit) => isDoneToday(habit, logs)).length;
 
@@ -77,7 +71,7 @@ export default function TodayScreen() {
 
     const habitChallenge = challenges.find((c) => c.status === 'active' && c.habitIds.includes(habit.id));
     if (habitChallenge) {
-      const progress = challengeProgress(habitChallenge, habits, nextLogs);
+      const progress = challengeProgress(habitChallenge, habits, nextLogs, schedulePeriods);
       if (progress.isComplete) {
         setChallengeStatus(habitChallenge.id, 'completed');
         fire('🏆', 'Challenge complete! 🎉', true);
@@ -126,7 +120,7 @@ export default function TodayScreen() {
           {activeChallenges.length > 0 && (
             <ThemedView style={{ gap: 8 }}>
               {activeChallenges.map((challenge) => {
-                const progress = challengeProgress(challenge, habits, logs);
+                const progress = challengeProgress(challenge, habits, logs, schedulePeriods);
                 if (progress.habits.length === 0) return null;
                 return (
                   <Pressable key={challenge.id} onPress={() => router.push('/(tabs)/challenges')}>

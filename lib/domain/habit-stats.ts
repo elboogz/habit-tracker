@@ -1,18 +1,11 @@
-import type { Challenge, Habit, HabitLog } from '../habit-types';
+import type { Challenge, Habit, HabitLog, HabitSchedulePeriod } from '../habit-types';
+import { addDays, dayKey } from './day-key';
+import { isScheduledOpportunity } from './schedule';
 
-/** Local day key 'YYYY-MM-DD' — avoids UTC off-by-one issues from toISOString(). */
-export function dayKey(date: Date = new Date()): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-export function addDays(key: string, amount: number): string {
-  const [year, month, day] = key.split('-').map(Number);
-  const date = new Date(year, month - 1, day + amount);
-  return dayKey(date);
-}
+// Re-exported so existing `@/lib/habit-stats` imports of dayKey/addDays (via the barrel) keep
+// working unchanged -- day-key.ts is the canonical home now that schedule.ts needs these too,
+// without creating a circular import between habit-stats.ts and schedule.ts.
+export { addDays, dayKey };
 
 function logsForHabitOnDay(logs: HabitLog[], habitId: string, date: string): HabitLog[] {
   return logs.filter((log) => log.habitId === habitId && log.date === date);
@@ -98,16 +91,35 @@ export type ChallengeProgress = {
   todayDone: boolean;
 };
 
-/** A challenge day counts only if every included habit was done that day. */
-function allDoneOnDay(habits: Habit[], logs: HabitLog[], date: string): boolean {
-  return habits.length > 0 && habits.every((habit) => isDoneOnDay(habit, logs, date));
+/**
+ * A challenge day counts only if every included habit was done that day. A habit that wasn't
+ * even a Scheduled Opportunity that day (Phase 2 — see docs/phase-2-implementation-plan.md
+ * section 7) can't be blamed for not being done; every existing habit defaults to daily/unpaused
+ * with zero schedule periods, so this is a no-op today and produces identical results to before
+ * Phase 2 for every habit that exists in practice (see the fixtures in habit-stats.test.ts).
+ */
+function allDoneOnDay(
+  habits: Habit[],
+  logs: HabitLog[],
+  schedulePeriods: HabitSchedulePeriod[],
+  date: string,
+): boolean {
+  return (
+    habits.length > 0 &&
+    habits.every((habit) => !isScheduledOpportunity(schedulePeriods, habit, date) || isDoneOnDay(habit, logs, date))
+  );
 }
 
-/** How a challenge is tracking — used by both the banner on Today and the Challenges tab. */
+/**
+ * How a challenge is tracking — used by both the banner on Today and the Challenges tab.
+ * `isFailed`'s semantics (a single missed non-today day fails the challenge outright) are
+ * preserved exactly through Phase 2 — the tolerance redesign is Phase 7's job, not this one.
+ */
 export function challengeProgress(
   challenge: Challenge,
   habits: Habit[],
   logs: HabitLog[],
+  schedulePeriods: HabitSchedulePeriod[] = [],
 ): ChallengeProgress {
   const challengeHabits = habits.filter((candidate) => challenge.habitIds.includes(candidate.id));
   const today = dayKey();
@@ -120,7 +132,7 @@ export function challengeProgress(
   let failed = false;
   for (let i = 0; i < daysElapsed; i += 1) {
     const date = addDays(challenge.startDate, i);
-    const done = allDoneOnDay(challengeHabits, logs, date);
+    const done = allDoneOnDay(challengeHabits, logs, schedulePeriods, date);
     if (done) {
       daysCompleted += 1;
     } else if (date !== today) {
@@ -136,7 +148,7 @@ export function challengeProgress(
     totalDays: challenge.durationDays,
     isComplete,
     isFailed: !isComplete && failed,
-    todayDone: allDoneOnDay(challengeHabits, logs, today),
+    todayDone: allDoneOnDay(challengeHabits, logs, schedulePeriods, today),
   };
 }
 

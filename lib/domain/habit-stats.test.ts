@@ -10,7 +10,7 @@ import {
   recentHistory,
   streakForHabit,
 } from './habit-stats';
-import type { Challenge, Habit, HabitLog } from '../habit-types';
+import type { Challenge, Habit, HabitLog, HabitSchedulePeriod } from '../habit-types';
 
 // Characterization tests: capture today's exact behavior before Phase 2 adds anything new.
 // These functions are relocated from the pre-Phase-2 lib/habit-stats.ts unchanged (see the
@@ -223,5 +223,52 @@ describe('challengeProgress — current failure semantics (preserved exactly thr
       logs,
     );
     expect(progress.todayDone).toBe(false);
+  });
+});
+
+describe('challengeProgress — schedule awareness (Phase 2 threading, section 7)', () => {
+  function challenge(overrides: Partial<Challenge> = {}): Challenge {
+    return {
+      id: 'c1',
+      habitIds: ['h1'],
+      durationDays: 3,
+      startDate: dayKey(),
+      status: 'active',
+      updatedAt: new Date().toISOString(),
+      ...overrides,
+    };
+  }
+
+  it('defaults to identical output with no schedulePeriods argument at all (backward compatible signature)', () => {
+    const habit = simpleHabit();
+    const today = dayKey();
+    const start = addDays(today, -2);
+    const logs = [log(habit.id, addDays(start, 1)), log(habit.id, addDays(start, 2))];
+    const withoutArg = challengeProgress(challenge({ startDate: start, durationDays: 3 }), [habit], logs);
+    const withEmptyArg = challengeProgress(challenge({ startDate: start, durationDays: 3 }), [habit], logs, []);
+    expect(withoutArg).toEqual(withEmptyArg);
+  });
+
+  it('does not blame a habit for a day it was paused, unlike a genuine miss', () => {
+    const habit = simpleHabit({ id: 'h1', createdAt: '2020-01-01T00:00:00.000Z' });
+    const today = dayKey();
+    const start = addDays(today, -2);
+    const pausedDay = start; // habit is paused for the challenge's first day only
+    const periods: HabitSchedulePeriod[] = [
+      { id: 'p1', habitId: 'h1', effectiveFrom: pausedDay, days: 'daily', paused: true, createdAt: '2020-01-01T00:00:00.000Z', updatedAt: '2020-01-01T00:00:00.000Z' },
+      { id: 'p2', habitId: 'h1', effectiveFrom: addDays(pausedDay, 1), days: 'daily', paused: false, createdAt: '2020-01-01T00:00:00.000Z', updatedAt: '2020-01-01T00:00:00.000Z' },
+    ];
+    // No log at all on the paused day; the other two days completed.
+    const logs = [log(habit.id, addDays(start, 1)), log(habit.id, addDays(start, 2))];
+
+    const withoutSchedule = challengeProgress(challenge({ startDate: start, durationDays: 3 }), [habit], logs);
+    const withSchedule = challengeProgress(challenge({ startDate: start, durationDays: 3 }), [habit], logs, periods);
+
+    // Without schedule awareness, the unlogged paused day reads as a genuine miss and fails the
+    // challenge (matching the pre-Phase-2 fixture above) -- with it, the paused day isn't a
+    // Scheduled Opportunity at all, so it can't be blamed, and the challenge completes instead.
+    expect(withoutSchedule.isFailed).toBe(true);
+    expect(withSchedule.isFailed).toBe(false);
+    expect(withSchedule.isComplete).toBe(true);
   });
 });

@@ -373,7 +373,7 @@ export default function SettingsScreen() {
                 <ThemedView style={{ gap: 8 }}>
                   <ThemedText style={{ fontSize: 13, fontWeight: '600' }}>Active challenges</ThemedText>
                   {activeChallenges.map((challenge) => {
-                    const progress = challengeProgress(challenge, state.habits, state.logs);
+                    const progress = challengeProgress(challenge, state.habits, state.logs, state.schedulePeriods);
                     if (progress.habits.length === 0) return null;
                     const atFinalDay = progress.daysElapsed >= progress.totalDays;
                     return (

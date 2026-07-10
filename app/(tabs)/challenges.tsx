@@ -22,7 +22,7 @@ export default function ChallengesScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const { state, startChallenge } = useHabitStore();
-  const { habits, logs, challenges } = state;
+  const { habits, logs, challenges, schedulePeriods } = state;
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [duration, setDuration] = useState(3);
 
@@ -65,7 +65,7 @@ export default function ChallengesScreen() {
               <ThemedText type="defaultSemiBold">Active</ThemedText>
               <ThemedView style={{ gap: 12 }}>
                 {activeChallenges.map((challenge) => {
-                  const progress = challengeProgress(challenge, habits, logs);
+                  const progress = challengeProgress(challenge, habits, logs, schedulePeriods);
                   if (progress.habits.length === 0) return null;
                   return (
                     <ThemedView key={challenge.id} style={[styles.activeCard, { borderColor: colors.tint }]}>
