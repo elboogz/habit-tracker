@@ -1,5 +1,5 @@
 import type { Challenge, Habit, HabitLog, HabitSchedulePeriod } from '../habit-types';
-import { addDays, dayKey } from './day-key';
+import { addDays, dayKey, daysBetween } from './day-key';
 import { isScheduledOpportunity } from './schedule';
 
 // Re-exported so existing `@/lib/habit-stats` imports of dayKey/addDays (via the barrel) keep
@@ -125,7 +125,7 @@ export function challengeProgress(
   const today = dayKey();
   const daysElapsed = Math.min(
     challenge.durationDays,
-    Math.max(1, dateDiffInDays(challenge.startDate, today) + 1),
+    Math.max(1, daysBetween(challenge.startDate, today) + 1),
   );
 
   let daysCompleted = 0;
@@ -150,12 +150,4 @@ export function challengeProgress(
     isFailed: !isComplete && failed,
     todayDone: allDoneOnDay(challengeHabits, logs, schedulePeriods, today),
   };
-}
-
-function dateDiffInDays(fromKey: string, toKey: string): number {
-  const [fy, fm, fd] = fromKey.split('-').map(Number);
-  const [ty, tm, td] = toKey.split('-').map(Number);
-  const from = Date.UTC(fy, fm - 1, fd);
-  const to = Date.UTC(ty, tm - 1, td);
-  return Math.round((to - from) / (1000 * 60 * 60 * 24));
 }
