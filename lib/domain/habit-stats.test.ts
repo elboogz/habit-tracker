@@ -123,6 +123,14 @@ describe('streakForHabit', () => {
     const logs = [log(habit.id, today), log(habit.id, addDays(today, -2))];
     expect(streakForHabit(habit, logs)).toBe(1);
   });
+
+  it('accepts an explicit asOfDate instead of always using live "now" -- needed by send-coaching-push, which computes each recipient\'s own local today', () => {
+    const habit = simpleHabit();
+    const logs = [log(habit.id, '2026-03-10'), log(habit.id, '2026-03-09'), log(habit.id, '2026-03-08')];
+    expect(streakForHabit(habit, logs, '2026-03-10')).toBe(3);
+    // A date far from "now" produces a result based on that date, not the live default.
+    expect(streakForHabit(habit, logs, '2026-01-01')).toBe(0);
+  });
 });
 
 describe('longestStreak', () => {
@@ -160,6 +168,12 @@ describe('recentHistory / consistency', () => {
     const today = dayKey();
     const logs = [log(habit.id, today), log(habit.id, addDays(today, -1))];
     expect(consistency(habit, logs, 4)).toBe(0.5);
+  });
+
+  it('accepts an explicit asOfDate for the same reason streakForHabit does', () => {
+    const habit = simpleHabit();
+    const logs = [log(habit.id, '2026-03-10'), log(habit.id, '2026-03-09')];
+    expect(consistency(habit, logs, 4, '2026-03-10')).toBe(0.5);
   });
 
   it('is 0 for a window of 0 days', () => {

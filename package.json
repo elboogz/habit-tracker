@@ -9,7 +9,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "jest"
+    "test": "jest",
+    "build:edge-functions": "node scripts/build-edge-functions.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

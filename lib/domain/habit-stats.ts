@@ -24,10 +24,15 @@ export function isDoneToday(habit: Habit, logs: HabitLog[]): boolean {
   return isDoneOnDay(habit, logs, dayKey());
 }
 
-/** Consecutive days (ending today or yesterday) where the habit's target was met. */
-export function streakForHabit(habit: Habit, logs: HabitLog[]): number {
-  const today = dayKey();
-  let cursor = isDoneOnDay(habit, logs, today) ? today : addDays(today, -1);
+/**
+ * Consecutive days (ending `asOfDate` or the day before) where the habit's target was met.
+ * `asOfDate` defaults to the caller's live local "today" -- the only case the client app ever
+ * needs. It exists as an explicit parameter because the send-coaching-push Edge Function must
+ * compute this per recipient's own local "today" (their timezone, not the server's) rather than
+ * the server's current date; that per-recipient date is what's passed in there.
+ */
+export function streakForHabit(habit: Habit, logs: HabitLog[], asOfDate: string = dayKey()): number {
+  let cursor = isDoneOnDay(habit, logs, asOfDate) ? asOfDate : addDays(asOfDate, -1);
 
   let streak = 0;
   while (isDoneOnDay(habit, logs, cursor)) {
@@ -62,21 +67,24 @@ export function longestStreak(habit: Habit, logs: HabitLog[]): number {
 
 export type DayStatus = { date: string; done: boolean; count: number };
 
-/** Most recent `days` days (oldest first) with completion status — powers the heatmap/bars. */
-export function recentHistory(habit: Habit, logs: HabitLog[], days: number): DayStatus[] {
-  const today = dayKey();
+/**
+ * Most recent `days` days (oldest first) ending `asOfDate`, with completion status -- powers the
+ * heatmap/bars. See streakForHabit's doc comment for why `asOfDate` is an explicit, defaulted
+ * parameter rather than always "now".
+ */
+export function recentHistory(habit: Habit, logs: HabitLog[], days: number, asOfDate: string = dayKey()): DayStatus[] {
   const result: DayStatus[] = [];
   for (let i = days - 1; i >= 0; i -= 1) {
-    const date = addDays(today, -i);
+    const date = addDays(asOfDate, -i);
     const count = countForDay(logs, habit.id, date);
     result.push({ date, count, done: isDoneOnDay(habit, logs, date) });
   }
   return result;
 }
 
-/** Fraction (0-1) of the last `days` days the habit was completed. */
-export function consistency(habit: Habit, logs: HabitLog[], days: number): number {
-  const history = recentHistory(habit, logs, days);
+/** Fraction (0-1) of the last `days` days (ending `asOfDate`) the habit was completed. */
+export function consistency(habit: Habit, logs: HabitLog[], days: number, asOfDate: string = dayKey()): number {
+  const history = recentHistory(habit, logs, days, asOfDate);
   const doneCount = history.filter((entry) => entry.done).length;
   return history.length === 0 ? 0 : doneCount / history.length;
 }

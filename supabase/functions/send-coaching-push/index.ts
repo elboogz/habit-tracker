@@ -31,7 +31,11 @@ function sanitizeContent(text: string): string {
     .trim();
 }
 
-function dayKey(date: Date): string {
+// BEGIN GENERATED DOMAIN -- DO NOT EDIT BELOW. Regenerate with `npm run build:edge-functions`.
+
+// -- from lib/domain/day-key.ts, do not hand-edit --
+/** Local day key 'YYYY-MM-DD' — avoids UTC off-by-one issues from toISOString(). */
+function dayKey(date: Date = new Date()): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
@@ -40,7 +44,84 @@ function dayKey(date: Date): string {
 
 function addDays(key: string, amount: number): string {
   const [year, month, day] = key.split('-').map(Number);
-  return dayKey(new Date(year, month - 1, day + amount));
+  const date = new Date(year, month - 1, day + amount);
+  return dayKey(date);
+}
+
+// -- from lib/domain/habit-stats.ts, do not hand-edit --
+function logsForHabitOnDay(logs: HabitLog[], habitId: string, date: string): HabitLog[] {
+  return logs.filter((log) => log.habitId === habitId && log.date === date);
+}
+
+function countForDay(logs: HabitLog[], habitId: string, date: string): number {
+  return logsForHabitOnDay(logs, habitId, date).reduce((sum, log) => sum + log.count, 0);
+}
+
+function isDoneOnDay(habit: Habit, logs: HabitLog[], date: string): boolean {
+  const total = countForDay(logs, habit.id, date);
+  return habit.type === 'count' ? total >= (habit.targetCount ?? 1) : total > 0;
+}
+
+/**
+ * Consecutive days (ending `asOfDate` or the day before) where the habit's target was met.
+ * `asOfDate` defaults to the caller's live local "today" -- the only case the client app ever
+ * needs. It exists as an explicit parameter because the send-coaching-push Edge Function must
+ * compute this per recipient's own local "today" (their timezone, not the server's) rather than
+ * the server's current date; that per-recipient date is what's passed in there.
+ */
+function streakForHabit(habit: Habit, logs: HabitLog[], asOfDate: string = dayKey()): number {
+  let cursor = isDoneOnDay(habit, logs, asOfDate) ? asOfDate : addDays(asOfDate, -1);
+
+  let streak = 0;
+  while (isDoneOnDay(habit, logs, cursor)) {
+    streak += 1;
+    cursor = addDays(cursor, -1);
+  }
+  return streak;
+}
+
+type DayStatus = { date: string; done: boolean; count: number };
+
+/**
+ * Most recent `days` days (oldest first) ending `asOfDate`, with completion status -- powers the
+ * heatmap/bars. See streakForHabit's doc comment for why `asOfDate` is an explicit, defaulted
+ * parameter rather than always "now".
+ */
+function recentHistory(habit: Habit, logs: HabitLog[], days: number, asOfDate: string = dayKey()): DayStatus[] {
+  const result: DayStatus[] = [];
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const date = addDays(asOfDate, -i);
+    const count = countForDay(logs, habit.id, date);
+    result.push({ date, count, done: isDoneOnDay(habit, logs, date) });
+  }
+  return result;
+}
+
+/** Fraction (0-1) of the last `days` days (ending `asOfDate`) the habit was completed. */
+function consistency(habit: Habit, logs: HabitLog[], days: number, asOfDate: string = dayKey()): number {
+  const history = recentHistory(habit, logs, days, asOfDate);
+  const doneCount = history.filter((entry) => entry.done).length;
+  return history.length === 0 ? 0 : doneCount / history.length;
+}
+
+// END GENERATED DOMAIN
+
+// Row shapes as returned by Supabase (snake_case, matching the Postgres columns directly) --
+// adapted below to the shared domain layer's camelCase shape, mirroring the same job
+// lib/supabase-sync.ts does client-side (rowToHabit/rowToLog) for the same reason: the generated
+// functions above are written once against Habit/HabitLog and must not be reimplemented against a
+// different field-naming convention here.
+type HabitRow = { id: string; name: string; emoji: string; type: string; target_count: number | null };
+type LogRow = { habit_id: string; date: string; count: number };
+type Habit = { id: string; type: string; targetCount?: number };
+type HabitLog = { habitId: string; date: string; count: number };
+
+function toDomainHabit(row: HabitRow): Habit {
+  return { id: row.id, type: row.type, targetCount: row.target_count ?? undefined };
+}
+
+function toDomainLogs(rows: LogRow[]): HabitLog[] {
+  return rows.map((row) => ({ habitId: row.habit_id, date: row.date, count: row.count }));
 }
 
 function localDateKey(timezone: string, date: Date): string {
@@ -65,34 +146,6 @@ function timeToMinutes(time: string): number {
   return hour * 60 + minute;
 }
 
-type HabitRow = { id: string; name: string; emoji: string; type: string; target_count: number | null };
-type LogRow = { habit_id: string; date: string; count: number };
-
-function isDoneOnDay(habit: HabitRow, logs: LogRow[], date: string): boolean {
-  const total = logs
-    .filter((log) => log.habit_id === habit.id && log.date === date)
-    .reduce((sum, log) => sum + log.count, 0);
-  return habit.type === 'count' ? total >= (habit.target_count ?? 1) : total > 0;
-}
-
-function streakForHabit(habit: HabitRow, logs: LogRow[], today: string): number {
-  let cursor = isDoneOnDay(habit, logs, today) ? today : addDays(today, -1);
-  let streak = 0;
-  while (isDoneOnDay(habit, logs, cursor)) {
-    streak += 1;
-    cursor = addDays(cursor, -1);
-  }
-  return streak;
-}
-
-function consistency(habit: HabitRow, logs: LogRow[], today: string, days: number): number {
-  let doneCount = 0;
-  for (let i = 0; i < days; i += 1) {
-    if (isDoneOnDay(habit, logs, addDays(today, -i))) doneCount += 1;
-  }
-  return days === 0 ? 0 : doneCount / days;
-}
-
 type Recipient = {
   user_id: string;
   coach_push_time: string;
@@ -114,8 +167,10 @@ async function generateNudge(supabase: any, anthropic: Anthropic, userId: string
   const summary = (habits as HabitRow[]).map((habit) => ({
     name: habit.name,
     emoji: habit.emoji,
-    streakDays: streakForHabit(habit, (logs ?? []) as LogRow[], today),
-    consistencyPct: Math.round(consistency(habit, (logs ?? []) as LogRow[], today, NUDGE_WINDOW_DAYS) * 100),
+    streakDays: streakForHabit(toDomainHabit(habit), toDomainLogs((logs ?? []) as LogRow[]), today),
+    consistencyPct: Math.round(
+      consistency(toDomainHabit(habit), toDomainLogs((logs ?? []) as LogRow[]), NUDGE_WINDOW_DAYS, today) * 100,
+    ),
   }));
 
   const response = await anthropic.messages.create({
