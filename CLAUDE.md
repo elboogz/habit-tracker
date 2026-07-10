@@ -4,6 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 @AGENTS.md
 
+The locked product specification is at docs/habit-tracker-evolution-plan.md. All work must comply with it. Do not expand scope or add product features beyond it.
+
 ## Commands
 
 - `npx expo start` — start the Metro dev server (scan the QR with Expo Go, or press `i`/`a`/`w` for simulator/emulator/web)
