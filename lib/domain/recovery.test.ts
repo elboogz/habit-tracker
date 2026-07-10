@@ -61,7 +61,7 @@ describe('example A -- miss then complete', () => {
 
   it('closes a Lapse with a 1-day recovery time', () => {
     expect(closedLapses(h, [], logs, today)).toEqual([
-      { habitId: 'h1', firstMissedDate: '2026-07-02', recoveredDate: '2026-07-03', recoveryTimeDays: 1 },
+      { habitId: 'h1', firstMissedDate: '2026-07-02', recoveredDate: '2026-07-03', recoveryTimeDays: 1, missedOpportunityCount: 1 },
     ]);
     expect(averageRecoveryTime(h, [], logs, today)).toBe(1);
   });
@@ -86,7 +86,7 @@ describe('example B -- miss, miss, then complete', () => {
 
   it('closes a single 2-day Lapse (lapse-level granularity differs from the pairwise count)', () => {
     expect(closedLapses(h, [], logs, today)).toEqual([
-      { habitId: 'h1', firstMissedDate: '2026-07-02', recoveredDate: '2026-07-04', recoveryTimeDays: 2 },
+      { habitId: 'h1', firstMissedDate: '2026-07-02', recoveredDate: '2026-07-04', recoveryTimeDays: 2, missedOpportunityCount: 2 },
     ]);
   });
 

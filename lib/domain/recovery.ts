@@ -51,6 +51,13 @@ export type ClosedLapse = {
   firstMissedDate: string;
   recoveredDate: string;
   recoveryTimeDays: number;
+  /**
+   * Consecutive missed Scheduled Opportunities in this lapse -- may differ from recoveryTimeDays
+   * once a habit has a non-daily schedule (Phase 2 adds no UI for that yet, so the two are
+   * currently always equal in practice, but Momentum State's evidence windows are opportunity-
+   * counted, not calendar-day-counted, so this field is what those windows actually consume).
+   */
+  missedOpportunityCount: number;
 };
 
 export type RecoveryRateResult = {
@@ -132,17 +139,21 @@ export function closedLapses(
   const records = opportunityRecords(habit, periods, logs, today);
   const result: ClosedLapse[] = [];
   let runStart: string | null = null;
+  let runLength = 0;
   for (const record of records) {
     if (!record.completed) {
       if (runStart === null) runStart = record.date;
+      runLength += 1;
     } else if (runStart !== null) {
       result.push({
         habitId: habit.id,
         firstMissedDate: runStart,
         recoveredDate: record.date,
         recoveryTimeDays: daysBetween(runStart, record.date),
+        missedOpportunityCount: runLength,
       });
       runStart = null;
+      runLength = 0;
     }
   }
   return result;
