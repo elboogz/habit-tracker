@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import type { Challenge, Habit, HabitLog, HabitState } from './habit-types';
+import type { Challenge, Habit, HabitLog, HabitSchedulePeriod, HabitState } from './habit-types';
 import { dequeue, enqueue, peekAll } from './sync-queue';
 import { supabase } from './supabase';
 
@@ -43,6 +43,16 @@ type SettingsRow = {
   notifications_enabled: boolean;
   notification_times: string[];
   sound_enabled: boolean;
+  updated_at: string;
+};
+
+type HabitSchedulePeriodRow = {
+  id: string;
+  habit_id: string;
+  effective_from: string;
+  days_of_week: number[] | null; // null = daily
+  paused: boolean;
+  created_at: string;
   updated_at: string;
 };
 
@@ -125,6 +135,31 @@ function rowToChallenge(row: ChallengeRow): Challenge {
   };
 }
 
+function periodToRow(period: HabitSchedulePeriod, userId: string): Record<string, unknown> {
+  return {
+    id: period.id,
+    user_id: userId,
+    habit_id: period.habitId,
+    effective_from: period.effectiveFrom,
+    days_of_week: period.days === 'daily' ? null : period.days,
+    paused: period.paused,
+    created_at: period.createdAt,
+    updated_at: period.updatedAt,
+  };
+}
+
+function rowToPeriod(row: HabitSchedulePeriodRow): HabitSchedulePeriod {
+  return {
+    id: row.id,
+    habitId: row.habit_id,
+    effectiveFrom: row.effective_from,
+    days: row.days_of_week ?? 'daily',
+    paused: row.paused,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function settingsToRow(state: HabitState, userId: string): Record<string, unknown> {
   return {
     user_id: userId,
@@ -167,6 +202,7 @@ export type RemoteChanges = {
   logs: HabitLog[];
   challenges: Challenge[];
   deletedChallengeIds: string[];
+  schedulePeriods: HabitSchedulePeriod[];
   settings: Partial<HabitState> | null;
 };
 
@@ -174,14 +210,17 @@ export type RemoteChanges = {
 export async function pullRemoteChanges(userId: string): Promise<RemoteChanges | null> {
   const since = await getWatermark(userId);
 
-  const [habitsRes, logsRes, challengesRes, settingsRes] = await Promise.all([
+  const [habitsRes, logsRes, challengesRes, schedulePeriodsRes, settingsRes] = await Promise.all([
     supabase.from('habits').select('*').eq('user_id', userId).gt('updated_at', since),
     supabase.from('habit_logs').select('*').eq('user_id', userId).gt('updated_at', since),
     supabase.from('challenges').select('*').eq('user_id', userId).gt('updated_at', since),
+    supabase.from('habit_schedule_periods').select('*').eq('user_id', userId).gt('updated_at', since),
     supabase.from('user_settings').select('*').eq('user_id', userId).gt('updated_at', since).maybeSingle(),
   ]);
 
-  if (habitsRes.error || logsRes.error || challengesRes.error || settingsRes.error) return null;
+  if (habitsRes.error || logsRes.error || challengesRes.error || schedulePeriodsRes.error || settingsRes.error) {
+    return null;
+  }
 
   let latest = since;
   const bump = (ts: string) => {
@@ -209,6 +248,13 @@ export async function pullRemoteChanges(userId: string): Promise<RemoteChanges |
     else challenges.push(rowToChallenge(row));
   }
 
+  // No delete/tombstone case here: schedule periods are append-only (see
+  // docs/phase-2-implementation-plan.md section 1), so every changed row is a new or corrected period.
+  const schedulePeriods = ((schedulePeriodsRes.data ?? []) as HabitSchedulePeriodRow[]).map((row) => {
+    bump(row.updated_at);
+    return rowToPeriod(row);
+  });
+
   let settings: Partial<HabitState> | null = null;
   if (settingsRes.data) {
     const row = settingsRes.data as SettingsRow;
@@ -222,10 +268,10 @@ export async function pullRemoteChanges(userId: string): Promise<RemoteChanges |
 
   if (latest !== since) await setWatermark(userId, latest);
 
-  return { habits, deletedHabitIds, logs, challenges, deletedChallengeIds, settings };
+  return { habits, deletedHabitIds, logs, challenges, deletedChallengeIds, schedulePeriods, settings };
 }
 
-/** Enqueues every habit/log/challenge/setting in `state` for upload — used once, the first time pre-existing local (pre-auth) data is adopted into a freshly signed-up account. */
+/** Enqueues every habit/log/challenge/schedule period/setting in `state` for upload — used once, the first time pre-existing local (pre-auth) data is adopted into a freshly signed-up account. */
 export async function enqueueFullUpload(state: HabitState, userId: string): Promise<void> {
   for (const habit of state.habits) {
     await enqueue('habits', 'upsert', habitToRow(habit, userId));
@@ -235,6 +281,9 @@ export async function enqueueFullUpload(state: HabitState, userId: string): Prom
   }
   for (const challenge of state.challenges) {
     await enqueue('challenges', 'upsert', challengeToRow(challenge, userId));
+  }
+  for (const period of state.schedulePeriods) {
+    await enqueue('habit_schedule_periods', 'upsert', periodToRow(period, userId));
   }
   await enqueue('user_settings', 'upsert', settingsToRow(state, userId));
 }
@@ -272,6 +321,16 @@ export async function diffAndSync(prev: HabitState, next: HabitState, userId: st
   }
   for (const removed of prevChallenges.values()) {
     await enqueue('challenges', 'upsert', challengeToRow(removed, userId, true));
+  }
+
+  // No delete branch: schedule periods are never removed locally (append-only, see
+  // docs/phase-2-implementation-plan.md section 1) -- only new or (defensively) corrected ones.
+  const prevPeriods = new Map(prev.schedulePeriods.map((p) => [p.id, p]));
+  for (const period of next.schedulePeriods) {
+    if (prevPeriods.get(period.id) !== period) {
+      await enqueue('habit_schedule_periods', 'upsert', periodToRow(period, userId));
+    }
+    prevPeriods.delete(period.id);
   }
 
   if (

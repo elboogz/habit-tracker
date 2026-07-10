@@ -8,43 +8,16 @@ import { addDays, dayKey } from './habit-stats';
 import type { Challenge, Habit, HabitLog, HabitState, HabitType } from './habit-types';
 import { scheduleAllReminders } from './notifications';
 import { diffAndSync, enqueueFullUpload, pullRemoteChanges, pushPendingChanges, type RemoteChanges } from './supabase-sync';
+import {
+  backfillTimestamps,
+  initialState,
+  migrateChallenges,
+  migrateSchedulePeriods,
+} from './domain/persistence';
 
 /** Pre-auth storage key, written before this app had accounts. Only read once, as a one-time migration into a brand-new account. */
 const LEGACY_STORAGE_KEY = 'habit-tracker/state-v1';
 const scopedKey = (userId: string) => `habit-tracker/state-v1:${userId}`;
-
-const initialState: HabitState = {
-  habits: [],
-  logs: [],
-  challenges: [],
-  hasOnboarded: false,
-  notifications: { enabled: false, times: ['09:00'] },
-  soundEnabled: true,
-};
-
-/** Pre-migration challenges stored a single `habitId` instead of `habitIds: string[]`. */
-type LegacyChallenge = Omit<Challenge, 'habitIds'> & { habitId?: string; habitIds?: string[] };
-
-function migrateChallenges(challenges: LegacyChallenge[] | undefined): Challenge[] {
-  if (!challenges) return [];
-  return challenges.map((challenge) => ({
-    ...challenge,
-    habitIds: challenge.habitIds ?? (challenge.habitId ? [challenge.habitId] : []),
-  }));
-}
-
-/** Pre-sync local data has no updatedAt — backfill it once so last-write-wins merging has something to compare against. */
-function backfillTimestamps(state: HabitState): HabitState {
-  return {
-    ...state,
-    habits: state.habits.map((habit) => ({ ...habit, updatedAt: habit.updatedAt ?? habit.createdAt })),
-    logs: state.logs.map((log) => ({ ...log, updatedAt: log.updatedAt ?? log.loggedAt })),
-    challenges: state.challenges.map((challenge) => ({
-      ...challenge,
-      updatedAt: challenge.updatedAt ?? new Date().toISOString(),
-    })),
-  };
-}
 
 type Action =
   | { type: 'hydrate'; state: HabitState }
@@ -92,7 +65,17 @@ function reducer(state: HabitState, action: Action): HabitState {
         else if (challenge.updatedAt >= challenges[index].updatedAt) challenges[index] = challenge;
       }
 
-      return { ...state, habits, logs, challenges, ...(changes.settings ?? {}) };
+      // Schedule periods are append-only (no delete path exists — see
+      // docs/phase-2-implementation-plan.md section 1), so merging only ever needs to add new
+      // ones or, defensively, accept a newer version of an existing one by id.
+      const schedulePeriods = [...state.schedulePeriods];
+      for (const period of changes.schedulePeriods) {
+        const index = schedulePeriods.findIndex((existing) => existing.id === period.id);
+        if (index === -1) schedulePeriods.push(period);
+        else if (period.updatedAt >= schedulePeriods[index].updatedAt) schedulePeriods[index] = period;
+      }
+
+      return { ...state, habits, logs, challenges, schedulePeriods, ...(changes.settings ?? {}) };
     }
     case 'addHabit':
       return { ...state, habits: [...state.habits, action.habit] };
@@ -371,7 +354,12 @@ export function HabitStoreProvider({ children }: { children: ReactNode }) {
           const parsed = JSON.parse(scoped);
           dispatch({
             type: 'hydrate',
-            state: { ...initialState, ...parsed, challenges: migrateChallenges(parsed.challenges) },
+            state: {
+              ...initialState,
+              ...parsed,
+              challenges: migrateChallenges(parsed.challenges),
+              schedulePeriods: migrateSchedulePeriods(parsed.schedulePeriods),
+            },
           });
         } catch {
           dispatch({ type: 'hydrate', state: initialState });
@@ -386,6 +374,7 @@ export function HabitStoreProvider({ children }: { children: ReactNode }) {
               ...initialState,
               ...parsed,
               challenges: migrateChallenges(parsed.challenges),
+              schedulePeriods: migrateSchedulePeriods(parsed.schedulePeriods),
             });
           } catch {
             // Corrupt legacy data — fall back to a fresh start below.

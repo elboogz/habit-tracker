@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const QUEUE_KEY = 'habit-tracker/sync-queue-v1';
 
-export type SyncTable = 'habits' | 'habit_logs' | 'challenges' | 'user_settings';
+export type SyncTable = 'habits' | 'habit_logs' | 'challenges' | 'user_settings' | 'habit_schedule_periods';
 
 export type SyncOp = {
   id: string;

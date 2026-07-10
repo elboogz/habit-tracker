@@ -1,24 +1,7 @@
-import type { Habit } from '../habit-types';
+import type { Habit, HabitSchedulePeriod, ScheduleDays } from '../habit-types';
 import { addDays, dayKey } from './habit-stats';
 
-/** 'daily', or the set of weekdays it applies to (0=Sunday..6=Saturday, matches Date.getDay()). */
-export type ScheduleDays = 'daily' | number[];
-
-/**
- * One append-only, effective-dated schedule/pause period for a habit. The period governing a
- * given date is the one with the greatest `effectiveFrom <= date` (see scheduleForDate) -- there
- * is no `effectiveTo`, so a new period is always an insert, never an edit of a prior row. This is
- * what guarantees changing a habit's schedule never recalculates the meaning of past periods.
- */
-export type HabitSchedulePeriod = {
-  id: string;
-  habitId: string;
-  effectiveFrom: string; // local day key 'YYYY-MM-DD', inclusive
-  days: ScheduleDays;
-  paused: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
+export type { HabitSchedulePeriod, ScheduleDays } from '../habit-types';
 
 export function parseDayKeyParts(key: string): { year: number; month: number; day: number } {
   const [year, month, day] = key.split('-').map(Number);
