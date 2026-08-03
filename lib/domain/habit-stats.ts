@@ -25,6 +25,15 @@ export function isDoneToday(habit: Habit, logs: HabitLog[]): boolean {
 }
 
 /**
+ * Cumulative count of logged entries for a habit, lifetime, never resetting. Consolidates the
+ * inline `logs.filter((log) => log.habitId === habitId).length` pattern previously duplicated
+ * across screens into one named export (Phase 3) -- not a new calculation.
+ */
+export function totalCompletions(habitId: string, logs: HabitLog[]): number {
+  return logs.filter((log) => log.habitId === habitId).length;
+}
+
+/**
  * Consecutive days (ending `asOfDate` or the day before) where the habit's target was met.
  * `asOfDate` defaults to the caller's live local "today" -- the only case the client app ever
  * needs. It exists as an explicit parameter because the send-coaching-push Edge Function must

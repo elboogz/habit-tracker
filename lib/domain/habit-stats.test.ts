@@ -9,6 +9,7 @@ import {
   longestStreak,
   recentHistory,
   streakForHabit,
+  totalCompletions,
 } from './habit-stats';
 import type { Challenge, Habit, HabitLog, HabitSchedulePeriod } from '../habit-types';
 
@@ -178,6 +179,27 @@ describe('recentHistory / consistency', () => {
 
   it('is 0 for a window of 0 days', () => {
     expect(consistency(simpleHabit(), [], 0)).toBe(0);
+  });
+});
+
+describe('totalCompletions', () => {
+  it('is 0 with no logs', () => {
+    expect(totalCompletions('h1', [])).toBe(0);
+  });
+
+  it('counts every log for the habit, regardless of date, and never resets', () => {
+    const logs = [
+      log('h1', '2026-01-01'),
+      log('h1', '2026-01-02'),
+      log('h1', '2026-06-15'),
+      log('h2', '2026-01-01'), // a different habit's log must not count
+    ];
+    expect(totalCompletions('h1', logs)).toBe(3);
+  });
+
+  it('counts multiple same-day logs for a count habit individually, matching cumulative "never resets" semantics', () => {
+    const logs = [log('h2', '2026-01-01', 1), log('h2', '2026-01-01', 1), log('h2', '2026-01-01', 1)];
+    expect(totalCompletions('h2', logs)).toBe(3);
   });
 });
 
