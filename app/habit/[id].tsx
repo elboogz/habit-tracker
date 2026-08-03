@@ -7,10 +7,30 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { consistency, longestStreak, recentHistory, streakForHabit } from '@/lib/habit-stats';
+import { averageRecoveryTime, recoveryRate } from '@/lib/domain/recovery';
+import { consistency, dayKey, longestStreak, recentHistory, streakForHabit, totalCompletions } from '@/lib/habit-stats';
 import { useHabitStore } from '@/lib/habit-store';
 
 const HISTORY_DAYS = 28;
+
+/**
+ * Recovery Time or Recovery Rate, whichever this habit's own display rules allow -- Recovery Rate
+ * (rolling, per docs/phase-3-experience-plan.md §7.2) is preferred when displayable; Recovery Time
+ * is the fallback; if neither is available yet, the tile is omitted entirely rather than shown
+ * empty. Nothing here recomputes the domain layer's own displayAsPercentage decision.
+ */
+function recoveryTileContent(
+  rate: ReturnType<typeof recoveryRate>,
+  avgRecoveryDays: number | null,
+): { emoji: string; value: string; label: string } | null {
+  if (rate.rolling.displayAsPercentage) {
+    return { emoji: '🔁', value: `${Math.round((rate.rolling.rate ?? 0) * 100)}%`, label: 'recovery rate' };
+  }
+  if (avgRecoveryDays !== null) {
+    return { emoji: '🔁', value: avgRecoveryDays.toFixed(1), label: 'avg. days to recover' };
+  }
+  return null;
+}
 
 export default function HabitDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -35,8 +55,12 @@ export default function HabitDetailScreen() {
   const streak = streakForHabit(habit, state.logs);
   const best = longestStreak(habit, state.logs);
   const history = recentHistory(habit, state.logs, HISTORY_DAYS);
-  const totalCompletions = state.logs.filter((log) => log.habitId === habit.id).length;
+  const total = totalCompletions(habit.id, state.logs);
   const habitConsistency = Math.round(consistency(habit, state.logs, HISTORY_DAYS) * 100);
+  const today = dayKey();
+  const rate = recoveryRate(habit, state.schedulePeriods, state.logs, today);
+  const avgRecoveryDays = averageRecoveryTime(habit, state.schedulePeriods, state.logs, today);
+  const recoveryTile = recoveryTileContent(rate, avgRecoveryDays);
   const recentLogs = state.logs
     .filter((log) => log.habitId === habit.id)
     .slice(-10)
@@ -54,34 +78,37 @@ export default function HabitDetailScreen() {
             </ThemedText>
           </ThemedView>
 
+          <ThemedView style={[styles.totalCard, { borderColor: colors.icon }]}>
+            <ThemedText style={styles.totalEmoji}>✅</ThemedText>
+            <ThemedText type="title" style={{ fontSize: 40 }}>
+              {total}
+            </ThemedText>
+            <ThemedText style={{ color: colors.icon, fontSize: 14 }}>total completions</ThemedText>
+          </ThemedView>
+
           <ThemedView style={styles.statsRow}>
             <ThemedView style={[styles.statCard, { borderColor: colors.icon }]}>
               <ThemedText style={styles.statEmoji}>🔥</ThemedText>
-              <ThemedText type="title" style={{ fontSize: 28 }}>
-                {streak}
+              <ThemedText type="title" style={{ fontSize: 22 }}>
+                Current: {streak} · Best: {best}
               </ThemedText>
-              <ThemedText style={{ color: colors.icon, fontSize: 13 }}>day streak</ThemedText>
+              <ThemedText style={{ color: colors.icon, fontSize: 13 }}>streak</ThemedText>
             </ThemedView>
-            <ThemedView style={[styles.statCard, { borderColor: colors.icon }]}>
-              <ThemedText style={styles.statEmoji}>🏆</ThemedText>
-              <ThemedText type="title" style={{ fontSize: 28 }}>
-                {best}
-              </ThemedText>
-              <ThemedText style={{ color: colors.icon, fontSize: 13 }}>best streak</ThemedText>
-            </ThemedView>
+            {recoveryTile && (
+              <ThemedView style={[styles.statCard, { borderColor: colors.icon }]}>
+                <ThemedText style={styles.statEmoji}>{recoveryTile.emoji}</ThemedText>
+                <ThemedText type="title" style={{ fontSize: 28 }}>
+                  {recoveryTile.value}
+                </ThemedText>
+                <ThemedText style={{ color: colors.icon, fontSize: 13 }}>{recoveryTile.label}</ThemedText>
+              </ThemedView>
+            )}
             <ThemedView style={[styles.statCard, { borderColor: colors.icon }]}>
               <ThemedText style={styles.statEmoji}>📈</ThemedText>
               <ThemedText type="title" style={{ fontSize: 28 }}>
                 {habitConsistency}%
               </ThemedText>
               <ThemedText style={{ color: colors.icon, fontSize: 13 }}>last {HISTORY_DAYS} days</ThemedText>
-            </ThemedView>
-            <ThemedView style={[styles.statCard, { borderColor: colors.icon }]}>
-              <ThemedText style={styles.statEmoji}>✅</ThemedText>
-              <ThemedText type="title" style={{ fontSize: 28 }}>
-                {totalCompletions}
-              </ThemedText>
-              <ThemedText style={{ color: colors.icon, fontSize: 13 }}>total logs</ThemedText>
             </ThemedView>
           </ThemedView>
 
@@ -141,6 +168,16 @@ const styles = StyleSheet.create({
   },
   header: {
     gap: 4,
+  },
+  totalCard: {
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 24,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  totalEmoji: {
+    fontSize: 24,
   },
   statsRow: {
     flexDirection: 'row',
