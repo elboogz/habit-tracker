@@ -10,20 +10,133 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getInsight, type Insight, type InsightKind } from '@/lib/ai-coach';
-import { consistency, longestStreak, recentHistory, streakForHabit } from '@/lib/habit-stats';
+import { confirmedStateAt, type MomentumStateKey } from '@/lib/domain/momentum';
+import { averageRecoveryTime, recoveryEvents, recoveryRate, type RecoveryRateResult } from '@/lib/domain/recovery';
+import { consistency, dayKey, recentHistory, totalCompletions } from '@/lib/habit-stats';
 import { useHabitStore } from '@/lib/habit-store';
+import type { Habit, HabitLog, HabitSchedulePeriod } from '@/lib/habit-types';
 
 type ViewMode = '14days' | '7days';
 
 const DAYS_BY_MODE: Record<ViewMode, number> = { '14days': 14, '7days': 7 };
 type ReflectionMode = 'weekly' | 'monthly';
 
+// Momentum State labels — approved product decision, docs/phase-3-experience-plan.md §7.1. Every
+// label describes a stretch of time, never the person; `quiet` gets the gentlest treatment since
+// it's shown mid-lapse. This is presentation copy over an already-computed domain enum, not a new
+// behavioural calculation.
+const MOMENTUM_COPY: Record<MomentumStateKey, { badge: string; narrative: string }> = {
+  insufficient_data: {
+    badge: 'Getting started',
+    narrative: 'Still gathering enough days to show a pattern.',
+  },
+  building: {
+    badge: 'Building momentum',
+    narrative: "You're building a pattern that's starting to stick.",
+  },
+  steady: {
+    badge: 'Steady',
+    narrative: "You're keeping a steady rhythm with this.",
+  },
+  thriving: {
+    badge: 'Thriving',
+    narrative: 'This habit is running strong right now.',
+  },
+  recovering: {
+    badge: 'Recovering',
+    narrative: "You're finding your way back — that's the part that counts.",
+  },
+  rebuilding: {
+    badge: 'Rebuilding',
+    narrative: "You're re-establishing this after some time away.",
+  },
+  quiet: {
+    badge: 'Quiet stretch',
+    narrative: 'Things have been quiet here lately. Today is a good day to return.',
+  },
+};
+
+/** Never a bare, possibly-shaming number — mirrors the domain layer's own displayAsPercentage rule rather than reimplementing it. */
+function recoveryRateText(result: RecoveryRateResult): string {
+  if (result.resolvedCount === 0) return 'Not enough recovery history yet';
+  if (!result.displayAsPercentage) return 'Recovery history still building';
+  return `${Math.round((result.rate ?? 0) * 100)}%`;
+}
+
+function consistencyText(habit: Habit, logs: HabitLog[], days: number, showRawCount: boolean): string {
+  if (showRawCount) {
+    const history = recentHistory(habit, logs, days);
+    const done = history.filter((entry) => entry.done).length;
+    return `${done} of ${history.length} days`;
+  }
+  return `${Math.round(consistency(habit, logs, days) * 100)}%`;
+}
+
+function HabitSnapshot({
+  habit,
+  logs,
+  schedulePeriods,
+  today,
+  colors,
+}: {
+  habit: Habit;
+  logs: HabitLog[];
+  schedulePeriods: HabitSchedulePeriod[];
+  today: string;
+  colors: (typeof Colors)['light'];
+}) {
+  const momentumState = confirmedStateAt(habit, schedulePeriods, logs, today);
+  const copy = MOMENTUM_COPY[momentumState];
+  const isNew = momentumState === 'insufficient_data';
+  const total = totalCompletions(habit.id, logs);
+  const rate = recoveryRate(habit, schedulePeriods, logs, today);
+  const recoveryCount = recoveryEvents(habit, schedulePeriods, logs, today).length;
+  const avgRecoveryDays = averageRecoveryTime(habit, schedulePeriods, logs, today);
+
+  return (
+    <ThemedView style={{ gap: 6 }}>
+      <ThemedView style={styles.momentumRow}>
+        <ThemedView style={[styles.momentumBadge, { borderColor: colors.tint }]}>
+          <ThemedText style={{ color: colors.tint, fontSize: 13, fontWeight: '700' }}>{copy.badge}</ThemedText>
+        </ThemedView>
+      </ThemedView>
+      <ThemedText style={{ color: colors.icon, fontSize: 14, lineHeight: 19 }}>{copy.narrative}</ThemedText>
+
+      <ThemedText style={{ fontSize: 13 }}>
+        <ThemedText type="defaultSemiBold" style={{ fontSize: 13 }}>
+          {total}
+        </ThemedText>{' '}
+        total completions
+      </ThemedText>
+
+      {isNew ? (
+        <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
+          Come back after a few more days to see recovery and consistency here.
+        </ThemedText>
+      ) : (
+        <>
+          <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
+            Recovery rate: {recoveryRateText(rate.rolling)}
+            {recoveryCount > 0 ? ` · ${recoveryCount} recover${recoveryCount === 1 ? 'y' : 'ies'}` : ''}
+          </ThemedText>
+          {avgRecoveryDays !== null && (
+            <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
+              Averages {avgRecoveryDays.toFixed(1)} day{avgRecoveryDays === 1 ? '' : 's'} to bounce back
+            </ThemedText>
+          )}
+        </>
+      )}
+    </ThemedView>
+  );
+}
+
 export default function ProgressScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const { state } = useHabitStore();
-  const { habits, logs } = state;
+  const { habits, logs, schedulePeriods } = state;
+  const today = dayKey();
   const [viewMode, setViewMode] = useState<ViewMode>('14days');
   const days = DAYS_BY_MODE[viewMode];
 
@@ -67,10 +180,17 @@ export default function ProgressScreen() {
     };
   }, [hasHabits, reflectionMode]);
 
-  const overallConsistency =
-    habits.length === 0
-      ? 0
-      : Math.round((habits.reduce((sum, habit) => sum + consistency(habit, logs, days), 0) / habits.length) * 100);
+  // Aggregate summary across every habit. Momentum State and Recovery Rate are per-habit concepts
+  // in the domain layer (lib/domain/momentum.ts, lib/domain/recovery.ts) with no cross-habit
+  // aggregate function — inventing one here (e.g. "worst state wins") would be a new behavioural
+  // rule, which this phase must not add. Total Completions and Consistency are safe to sum/average
+  // because they're plain arithmetic over already-computed per-habit domain outputs, matching this
+  // screen's pre-existing overallConsistency precedent. Momentum/Recovery are shown per habit below.
+  const aggregateTotalCompletions = habits.reduce((sum, habit) => sum + totalCompletions(habit.id, logs), 0);
+  const aggregateWeeklyConsistency =
+    habits.length === 0 ? 0 : Math.round((habits.reduce((sum, habit) => sum + consistency(habit, logs, 7), 0) / habits.length) * 100);
+  const aggregateMonthlyConsistency =
+    habits.length === 0 ? 0 : Math.round((habits.reduce((sum, habit) => sum + consistency(habit, logs, 30), 0) / habits.length) * 100);
 
   return (
     <ThemedView style={styles.container}>
@@ -78,12 +198,25 @@ export default function ProgressScreen() {
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <ThemedView style={styles.header}>
             <ThemedText type="title">Progress</ThemedText>
-            <ThemedText style={{ color: colors.icon }}>
-              {habits.length === 0
-                ? 'Your consistency story starts once you log a habit'
-                : `${overallConsistency}% consistent over the last ${days} days`}
-            </ThemedText>
+            {!hasHabits && (
+              <ThemedText style={{ color: colors.icon }}>Your progress story starts once you log a habit</ThemedText>
+            )}
           </ThemedView>
+
+          {hasHabits && (
+            <ThemedView style={{ gap: 4 }}>
+              <ThemedText type="defaultSemiBold" style={{ fontSize: 15 }}>
+                {aggregateTotalCompletions} completions logged so far
+              </ThemedText>
+              <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
+                {aggregateWeeklyConsistency}% consistent this week · {aggregateMonthlyConsistency}% over the last 30
+                days
+              </ThemedText>
+              <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
+                See each habit below for its own momentum and recovery.
+              </ThemedText>
+            </ThemedView>
+          )}
 
           {hasHabits && (
             <ThemedView style={[styles.coachCard, { borderColor: colors.tint }]}>
@@ -171,10 +304,9 @@ export default function ProgressScreen() {
 
           <ThemedView style={styles.list}>
             {habits.map((habit) => {
-              const streak = streakForHabit(habit, logs);
-              const best = longestStreak(habit, logs);
               const history = recentHistory(habit, logs, days);
-              const habitConsistency = Math.round(consistency(habit, logs, days) * 100);
+              const isNew = confirmedStateAt(habit, schedulePeriods, logs, today) === 'insufficient_data';
+              const habitConsistencyText = consistencyText(habit, logs, days, isNew);
 
               return (
                 <Pressable
@@ -186,20 +318,17 @@ export default function ProgressScreen() {
                     pressed && { opacity: 0.7 },
                   ]}>
                   <ThemedView style={styles.cardHeader}>
-                    <ThemedView style={{ gap: 2, flex: 1 }}>
-                      <ThemedText type="defaultSemiBold">
-                        {habit.emoji} {habit.name}
-                      </ThemedText>
-                      <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
-                        🔥 {streak} day streak · 🏆 best {best}
-                      </ThemedText>
-                    </ThemedView>
+                    <ThemedText type="defaultSemiBold" style={{ flex: 1 }}>
+                      {habit.emoji} {habit.name}
+                    </ThemedText>
                     <IconSymbol name="chevron.right" size={18} color={colors.icon} />
                   </ThemedView>
 
+                  <HabitSnapshot habit={habit} logs={logs} schedulePeriods={schedulePeriods} today={today} colors={colors} />
+
                   <HabitHeatmap history={history} fillColor={colors.tint} emptyColor={colors.icon} />
                   <ThemedText style={{ color: colors.icon, fontSize: 12 }}>
-                    {habitConsistency}% consistent over the last {days} days
+                    {habitConsistencyText} over the last {days} days
                   </ThemedText>
                 </Pressable>
               );
@@ -211,8 +340,8 @@ export default function ProgressScreen() {
               <ThemedText style={{ fontSize: 32 }}>📊</ThemedText>
               <ThemedText type="defaultSemiBold">No data yet</ThemedText>
               <ThemedText style={{ color: colors.icon, textAlign: 'center' }}>
-                Streaks, consistency percentages, and history charts will show up here as you track habits on the
-                Today tab.
+                Once you start logging on the Today tab, you&apos;ll see how you&apos;re really doing here — not just
+                whether you kept a streak, but how you come back after a day off.
               </ThemedText>
             </ThemedView>
           )}
@@ -233,6 +362,16 @@ const styles = StyleSheet.create({
   },
   header: {
     gap: 4,
+  },
+  momentumRow: {
+    flexDirection: 'row',
+  },
+  momentumBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    alignSelf: 'flex-start',
   },
   coachCard: {
     gap: 12,
