@@ -32,6 +32,15 @@ const RECOVERY_MESSAGES = (total: number) => [
   `Back on track. Your ${total} total completions are still yours.`,
 ];
 
+// Every 25 completions is a quiet milestone -- routine celebration strength (never big: true,
+// which is reserved for recovery per §6.2), a small acknowledgment rather than a badge or level.
+const MILESTONE_STEP = 25;
+
+function milestoneMessage(total: number): string | null {
+  if (total <= 0 || total % MILESTONE_STEP !== 0) return null;
+  return `${total} completions. That's real, lasting progress.`;
+}
+
 function formatTodayLabel(): string {
   return new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
 }
@@ -114,6 +123,12 @@ export default function TodayScreen() {
     if (isRecoveryEvent(habit, schedulePeriods, nextLogs, today, today)) {
       const recoveryMessages = RECOVERY_MESSAGES(total);
       fire(habit.emoji, recoveryMessages[total % recoveryMessages.length], true);
+      return;
+    }
+
+    const milestone = milestoneMessage(total);
+    if (milestone) {
+      fire(habit.emoji, milestone);
       return;
     }
 

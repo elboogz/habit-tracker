@@ -109,7 +109,7 @@ export default function OnboardingScreen() {
                 <FeatureRow
                   emoji="📊"
                   title="Track your progress"
-                  body="Streaks, your best-ever streak, and consistency charts show how you're doing over time."
+                  body="See how you're really doing over time — not just whether you kept a streak, but how you come back after a day off."
                   colors={colors}
                 />
                 <FeatureRow
