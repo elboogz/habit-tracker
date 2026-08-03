@@ -8,19 +8,29 @@ import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { isRecoveryEvent } from '@/lib/domain/recovery';
 import {
   challengeProgress,
   countForDay,
   dayKey,
   isDoneOnDay,
   isDoneToday,
-  streakForHabit,
+  totalCompletions,
 } from '@/lib/habit-stats';
 import { useHabitStore } from '@/lib/habit-store';
 import type { Habit } from '@/lib/habit-types';
 import { useCelebration } from '@/lib/use-celebration';
 
-const STREAK_MESSAGES = ['Nice work! 🎉', "You're on a roll!", 'Keep it up! 💪', 'Consistency wins.'];
+const ROUTINE_MESSAGES = ['Nice work! 🎉', "You're on a roll!", 'Keep it up! 💪', 'Consistency wins.'];
+
+// Reference copy from docs/phase-3-experience-plan.md §6.2 -- reused verbatim, not reinvented.
+// Reserved for the moment a Scheduled Opportunity is completed immediately after a miss: a
+// stronger celebration than any routine completion, per the approved plan's emotional hierarchy.
+const RECOVERY_MESSAGES = (total: number) => [
+  'That is a recovery. Coming back is the skill that builds lasting habits.',
+  'You returned after a missed day. That matters more than maintaining a perfect record.',
+  `Back on track. Your ${total} total completions are still yours.`,
+];
 
 function formatTodayLabel(): string {
   return new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
@@ -95,9 +105,19 @@ export default function TodayScreen() {
       return;
     }
 
-    const streak = streakForHabit(habit, nextLogs);
-    const message = streak > 1 ? `🔥 ${streak} day streak!` : STREAK_MESSAGES[streak % STREAK_MESSAGES.length];
-    fire(habit.emoji, message);
+    const total = totalCompletions(habit.id, nextLogs);
+
+    // A Recovery Event -- today's completion immediately follows a missed Scheduled Opportunity
+    // -- gets a stronger celebration than a routine one, independent of any streak or Momentum
+    // State timing (see docs/phase-3-experience-plan.md §6.2). This check is evaluated fresh from
+    // the domain layer; nothing about "recovery" is computed here.
+    if (isRecoveryEvent(habit, schedulePeriods, nextLogs, today, today)) {
+      const recoveryMessages = RECOVERY_MESSAGES(total);
+      fire(habit.emoji, recoveryMessages[total % recoveryMessages.length], true);
+      return;
+    }
+
+    fire(habit.emoji, ROUTINE_MESSAGES[total % ROUTINE_MESSAGES.length]);
   }
 
   return (
@@ -143,7 +163,6 @@ export default function TodayScreen() {
           <ThemedView style={styles.list}>
             {habits.map((habit) => {
               const done = isDoneToday(habit, logs);
-              const streak = streakForHabit(habit, logs);
               const todayCount = countForDay(logs, habit.id, today);
 
               return (
@@ -171,9 +190,9 @@ export default function TodayScreen() {
                       <ThemedText type="defaultSemiBold">
                         {habit.emoji} {habit.name}
                       </ThemedText>
-                      <ThemedText style={{ color: colors.icon, fontSize: 14 }}>
-                        🔥 {streak} day streak{habit.reminderTimes?.length ? ' · 🔔' : ''}
-                      </ThemedText>
+                      {habit.reminderTimes?.length ? (
+                        <ThemedText style={{ color: colors.icon, fontSize: 14 }}>🔔</ThemedText>
+                      ) : null}
                     </Pressable>
                     {habit.type === 'count' && (
                       <ThemedView style={styles.countStepper}>
