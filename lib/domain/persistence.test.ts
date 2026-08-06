@@ -1,4 +1,4 @@
-import { initialState, migrateChallenges, migrateSchedulePeriods } from './persistence';
+import { initialState, migrateChallenges, migrateLapseReasons, migrateSchedulePeriods } from './persistence';
 import type { Habit, HabitSchedulePeriod, HabitState } from '../habit-types';
 
 // Directly exercises the hydration/migration logic Phase 2 adds to lib/habit-store.tsx, per
@@ -42,6 +42,27 @@ describe('migrateSchedulePeriods', () => {
   });
 });
 
+describe('migrateLapseReasons', () => {
+  it('defaults an absent value to an empty array', () => {
+    expect(migrateLapseReasons(undefined)).toEqual([]);
+  });
+
+  it('passes an existing array through unchanged', () => {
+    const entries = [
+      {
+        id: 'lr1',
+        habitId: 'h1',
+        missedOpportunityDate: '2026-02-01',
+        reason: null,
+        skipped: true,
+        createdAt: '2026-02-01T00:00:00.000Z',
+        updatedAt: '2026-02-01T00:00:00.000Z',
+      },
+    ];
+    expect(migrateLapseReasons(entries)).toBe(entries);
+  });
+});
+
 // The exact hydration expression used in lib/habit-store.tsx's HabitStoreProvider effect, for
 // both the scoped-key and legacy migration paths (see the corrected design in section 6).
 function newCodeHydrate(parsed: Record<string, unknown>): HabitState {
@@ -50,6 +71,7 @@ function newCodeHydrate(parsed: Record<string, unknown>): HabitState {
     ...parsed,
     challenges: migrateChallenges(parsed.challenges as never),
     schedulePeriods: migrateSchedulePeriods(parsed.schedulePeriods as HabitSchedulePeriod[] | undefined),
+    lapseReasons: migrateLapseReasons(parsed.lapseReasons as never),
   } as HabitState;
 }
 
@@ -140,6 +162,7 @@ describe('round-trip', () => {
       logs: [],
       challenges: [],
       schedulePeriods: [samplePeriod()],
+      lapseReasons: [],
       hasOnboarded: true,
       notifications: { enabled: true, times: ['09:00'] },
       soundEnabled: true,

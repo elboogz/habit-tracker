@@ -12,6 +12,7 @@ import {
   backfillTimestamps,
   initialState,
   migrateChallenges,
+  migrateLapseReasons,
   migrateSchedulePeriods,
 } from './domain/persistence';
 
@@ -359,6 +360,7 @@ export function HabitStoreProvider({ children }: { children: ReactNode }) {
               ...parsed,
               challenges: migrateChallenges(parsed.challenges),
               schedulePeriods: migrateSchedulePeriods(parsed.schedulePeriods),
+              lapseReasons: migrateLapseReasons(parsed.lapseReasons),
             },
           });
         } catch {
@@ -375,6 +377,7 @@ export function HabitStoreProvider({ children }: { children: ReactNode }) {
               ...parsed,
               challenges: migrateChallenges(parsed.challenges),
               schedulePeriods: migrateSchedulePeriods(parsed.schedulePeriods),
+              lapseReasons: migrateLapseReasons(parsed.lapseReasons),
             });
           } catch {
             // Corrupt legacy data — fall back to a fresh start below.

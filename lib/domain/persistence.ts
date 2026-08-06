@@ -1,13 +1,14 @@
 // Pure local-persistence helpers used by lib/habit-store.tsx's hydration effect. Kept
 // dependency-free (no AsyncStorage, no Supabase, no React) so they're directly unit-testable --
 // see lib/habit-store.migration.test.ts -- without needing to mock native modules.
-import type { Challenge, HabitSchedulePeriod, HabitState } from '../habit-types';
+import type { Challenge, HabitSchedulePeriod, HabitState, LapseReasonEntry } from '../habit-types';
 
 export const initialState: HabitState = {
   habits: [],
   logs: [],
   challenges: [],
   schedulePeriods: [],
+  lapseReasons: [],
   hasOnboarded: false,
   notifications: { enabled: false, times: ['09:00'] },
   soundEnabled: true,
@@ -36,6 +37,16 @@ export function migrateChallenges(challenges: LegacyChallenge[] | undefined): Ch
  */
 export function migrateSchedulePeriods(periods: HabitSchedulePeriod[] | undefined): HabitSchedulePeriod[] {
   return periods ?? [];
+}
+
+/**
+ * Pre-Phase-4 local data has no `lapseReasons` key at all. Same per-field-defaulting pattern as
+ * migrateSchedulePeriods above — an absent value defaults to an empty array, which is a
+ * behavioral no-op (no lapse reason existing is indistinguishable from none having been written
+ * yet), not a migration step with anything to backfill.
+ */
+export function migrateLapseReasons(entries: LapseReasonEntry[] | undefined): LapseReasonEntry[] {
+  return entries ?? [];
 }
 
 /** Pre-sync local data has no updatedAt — backfill it once so last-write-wins merging has something to compare against. */
