@@ -57,8 +57,18 @@ function countForDay(logs: HabitLog[], habitId: string, date: string): number {
   return logsForHabitOnDay(logs, habitId, date).reduce((sum, log) => sum + log.count, 0);
 }
 
+/**
+ * A reduced ("smaller version") completion counts fully as done for the day -- not partial
+ * credit -- so every downstream consumer (streaks, consistency, recovery, momentum, challenge
+ * progress) automatically treats it as a completed day with no further changes (Phase 4, see
+ * docs/phase-4-plan.md section 2.2). Additive and backward-compatible: no pre-Phase-4 HabitLog
+ * has a `reduced` field, so every existing computation over existing data is byte-for-byte
+ * unchanged.
+ */
 function isDoneOnDay(habit: Habit, logs: HabitLog[], date: string): boolean {
-  const total = countForDay(logs, habit.id, date);
+  const dayLogs = logsForHabitOnDay(logs, habit.id, date);
+  if (dayLogs.some((log) => log.reduced)) return true;
+  const total = dayLogs.reduce((sum, log) => sum + log.count, 0);
   return habit.type === 'count' ? total >= (habit.targetCount ?? 1) : total > 0;
 }
 
@@ -112,16 +122,16 @@ function consistency(habit: Habit, logs: HabitLog[], days: number, asOfDate: str
 // functions above are written once against Habit/HabitLog and must not be reimplemented against a
 // different field-naming convention here.
 type HabitRow = { id: string; name: string; emoji: string; type: string; target_count: number | null };
-type LogRow = { habit_id: string; date: string; count: number };
+type LogRow = { habit_id: string; date: string; count: number; reduced: boolean | null };
 type Habit = { id: string; type: string; targetCount?: number };
-type HabitLog = { habitId: string; date: string; count: number };
+type HabitLog = { habitId: string; date: string; count: number; reduced?: boolean };
 
 function toDomainHabit(row: HabitRow): Habit {
   return { id: row.id, type: row.type, targetCount: row.target_count ?? undefined };
 }
 
 function toDomainLogs(rows: LogRow[]): HabitLog[] {
-  return rows.map((row) => ({ habitId: row.habit_id, date: row.date, count: row.count }));
+  return rows.map((row) => ({ habitId: row.habit_id, date: row.date, count: row.count, reduced: row.reduced ?? undefined }));
 }
 
 function localDateKey(timezone: string, date: Date): string {
@@ -159,7 +169,7 @@ async function generateNudge(supabase: any, anthropic: Anthropic, userId: string
 
   const [{ data: habits }, { data: logs }] = await Promise.all([
     supabase.from('habits').select('id, name, emoji, type, target_count').eq('user_id', userId).is('deleted_at', null),
-    supabase.from('habit_logs').select('habit_id, date, count').eq('user_id', userId).gte('date', windowStart),
+    supabase.from('habit_logs').select('habit_id, date, count, reduced').eq('user_id', userId).gte('date', windowStart),
   ]);
 
   if (!habits || habits.length === 0) return null;

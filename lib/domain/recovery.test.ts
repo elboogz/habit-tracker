@@ -1,8 +1,10 @@
-import type { Habit, HabitLog, HabitSchedulePeriod } from '../habit-types';
+import type { Habit, HabitLog, HabitSchedulePeriod, LapseReasonEntry } from '../habit-types';
 import { addDays } from './day-key';
 import {
   averageRecoveryTime,
   closedLapses,
+  lapseReasonSuppressionUntil,
+  openLapse,
   recoverableLapseInstances,
   recoveryEvents,
   recoveryRate,
@@ -42,6 +44,23 @@ function log(habitId: string, date: string): HabitLog {
 
 function pausedPeriod(effectiveFrom: string, paused: boolean, id: string): HabitSchedulePeriod {
   return { id, habitId: 'h1', effectiveFrom, days: 'daily', paused, createdAt: `${effectiveFrom}T00:00:00.000Z`, updatedAt: `${effectiveFrom}T00:00:00.000Z` };
+}
+
+function reducedLog(habitId: string, date: string, count: number): HabitLog {
+  return { id: `${habitId}-${date}-reduced`, habitId, date, count, reduced: true, loggedAt: `${date}T12:00:00.000Z`, updatedAt: `${date}T12:00:00.000Z` };
+}
+
+function lapseReason(overrides: Partial<LapseReasonEntry> = {}): LapseReasonEntry {
+  return {
+    id: 'lr1',
+    habitId: 'h1',
+    missedOpportunityDate: '2026-07-02',
+    reason: null,
+    skipped: true,
+    createdAt: '2026-07-02T12:00:00.000Z',
+    updatedAt: '2026-07-02T12:00:00.000Z',
+    ...overrides,
+  };
 }
 
 describe('example A -- miss then complete', () => {
@@ -237,5 +256,135 @@ describe('rolling vs. lifetime Recovery Rate horizons', () => {
     expect(rate.rolling.resolvedCount).toBe(10);
     expect(rate.rolling.recoveredCount).toBe(8); // last 10 = 8 of the recovered ones + both trailing not-recovered ones
     expect(rate.lifetime.rate).not.toEqual(rate.rolling.rate);
+  });
+});
+
+// Phase 4 -- docs/phase-4-plan.md section 2.1.
+describe('openLapse', () => {
+  it('detects a still-open lapse mid-run, never counting today\'s own opportunity as missed', () => {
+    const h = habit('2026-07-01');
+    const logs = [log('h1', '2026-07-01')]; // nothing logged since
+    const today = '2026-07-05';
+    // Opportunities before today: 07-01 (done), 07-02, 07-03, 07-04 (all missed).
+    expect(openLapse(h, [], logs, today)).toEqual({
+      habitId: 'h1',
+      firstMissedDate: '2026-07-02',
+      missedOpportunityCount: 3,
+    });
+  });
+
+  it('returns null once the most recent opportunity before today was completed', () => {
+    const h = habit('2026-07-01');
+    const logs = [log('h1', '2026-07-01'), log('h1', '2026-07-02')];
+    expect(openLapse(h, [], logs, '2026-07-03')).toBeNull();
+  });
+
+  it('returns null when the habit has no opportunities before today at all', () => {
+    const h = habit('2026-07-05');
+    expect(openLapse(h, [], [], '2026-07-05')).toBeNull();
+  });
+
+  it('is unaffected by whether today itself has already been logged -- it only ever judges through yesterday', () => {
+    const h = habit('2026-07-01');
+    const missedYesterday = [log('h1', '2026-07-01')]; // 07-02 missed, today is 07-03
+    const withTodayLoggedToo = [...missedYesterday, log('h1', '2026-07-03')];
+    expect(openLapse(h, [], missedYesterday, '2026-07-03')).toEqual(openLapse(h, [], withTodayLoggedToo, '2026-07-03'));
+  });
+});
+
+// Phase 4 -- docs/phase-4-plan.md section 2.2: a reduced completion counts fully as done, so it
+// resolves an open lapse exactly like a full completion would.
+describe('a reduced completion closes a lapse exactly like a full completion (section 2.2)', () => {
+  const h = habit('2026-07-01', { type: 'count', targetCount: 8 });
+  const logs = [reducedLog('h1', '2026-07-03', 2)]; // 07-01, 07-02 both missed
+  const today = '2026-07-03';
+
+  it('the reduced day reads as a Recovery Event, same as a full completion would', () => {
+    expect(recoveryEvents(h, [], logs, today)).toEqual([{ habitId: 'h1', date: '2026-07-03' }]);
+  });
+
+  it('closes the Lapse spanning both missed days', () => {
+    expect(closedLapses(h, [], logs, today)).toEqual([
+      { habitId: 'h1', firstMissedDate: '2026-07-01', recoveredDate: '2026-07-03', recoveryTimeDays: 2, missedOpportunityCount: 2 },
+    ]);
+  });
+
+  it('the lapse is no longer open as of the next day', () => {
+    expect(openLapse(h, [], logs, '2026-07-04')).toBeNull();
+  });
+});
+
+// Phase 4 -- docs/phase-4-plan.md section 7.4, the reverse-direction worked example: retroactively
+// removing a completion that had previously closed a lapse.
+describe('example G -- retroactive removal reopens a lapse and reverses a Recovery Event (section 7.4)', () => {
+  const h = habit('2026-07-01');
+  const today = '2026-07-03';
+  const beforeRemoval = [log('h1', '2026-07-03')]; // 07-01, 07-02 missed; 07-03 completed
+  const afterRemoval: HabitLog[] = []; // 07-01, 07-02, 07-03 all missed
+
+  it('before removal: the 07-02/07-03 pair is recovered and a Recovery Event fires on 07-03', () => {
+    expect(recoverableLapseInstances(h, [], beforeRemoval, today)).toContainEqual({
+      habitId: 'h1',
+      missedOpportunityDate: '2026-07-02',
+      resolvingOpportunityDate: '2026-07-03',
+      recovered: true,
+    });
+    expect(closedLapses(h, [], beforeRemoval, today)).toEqual([
+      { habitId: 'h1', firstMissedDate: '2026-07-01', recoveredDate: '2026-07-03', recoveryTimeDays: 2, missedOpportunityCount: 2 },
+    ]);
+    expect(recoveryEvents(h, [], beforeRemoval, today)).toEqual([{ habitId: 'h1', date: '2026-07-03' }]);
+  });
+
+  it('after removal: the same pair flips to not-recovered, the closed Lapse disappears, and the Recovery Event is gone', () => {
+    expect(recoverableLapseInstances(h, [], afterRemoval, today)).toContainEqual({
+      habitId: 'h1',
+      missedOpportunityDate: '2026-07-02',
+      resolvingOpportunityDate: '2026-07-03',
+      recovered: false,
+    });
+    expect(closedLapses(h, [], afterRemoval, today)).toEqual([]);
+    expect(recoveryEvents(h, [], afterRemoval, today)).toEqual([]);
+  });
+
+  it('the open-lapse view (which only ever judges through yesterday) is identical before and after -- proving the removal only affects today\'s own resolution, not the detection of the prior open run', () => {
+    expect(openLapse(h, [], beforeRemoval, today)).toEqual(openLapse(h, [], afterRemoval, today));
+    expect(openLapse(h, [], afterRemoval, today)).toEqual({
+      habitId: 'h1',
+      firstMissedDate: '2026-07-01',
+      missedOpportunityCount: 2,
+    });
+  });
+});
+
+// Phase 4 -- docs/phase-4-plan.md section 2.5.
+describe('lapseReasonSuppressionUntil', () => {
+  const h = habit('2026-07-01');
+  const openLapseStart = '2026-07-02';
+
+  it('returns null when there is no relevant LapseReasonEntry at all', () => {
+    expect(lapseReasonSuppressionUntil(h, [], [], openLapseStart, '2026-07-05')).toBeNull();
+  });
+
+  it('ignores an entry for a different habit', () => {
+    const entries = [lapseReason({ habitId: 'other-habit', createdAt: '2026-07-03T00:00:00.000Z' })];
+    expect(lapseReasonSuppressionUntil(h, [], entries, openLapseStart, '2026-07-05')).toBeNull();
+  });
+
+  it('ignores an entry created before the current open lapse began', () => {
+    const entries = [lapseReason({ createdAt: '2026-07-01T00:00:00.000Z' })]; // before openLapseStart
+    expect(lapseReasonSuppressionUntil(h, [], entries, openLapseStart, '2026-07-05')).toBeNull();
+  });
+
+  it('derives the next Scheduled Opportunity after an entry created within the open lapse', () => {
+    const entries = [lapseReason({ createdAt: '2026-07-03T09:00:00.000Z' })];
+    expect(lapseReasonSuppressionUntil(h, [], entries, openLapseStart, '2026-07-05')).toBe('2026-07-04');
+  });
+
+  it('uses the most recently created entry when several were written across the open lapse', () => {
+    const entries = [
+      lapseReason({ id: 'lr-early', createdAt: '2026-07-02T09:00:00.000Z' }),
+      lapseReason({ id: 'lr-late', createdAt: '2026-07-04T09:00:00.000Z' }),
+    ];
+    expect(lapseReasonSuppressionUntil(h, [], entries, openLapseStart, '2026-07-05')).toBe('2026-07-05');
   });
 });

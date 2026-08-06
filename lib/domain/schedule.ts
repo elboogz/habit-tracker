@@ -46,6 +46,28 @@ export function isScheduledOpportunity(periods: HabitSchedulePeriod[], habit: Ha
   return days.includes(weekdayOf(date));
 }
 
+/**
+ * The next date strictly after `date` on which `habit` has a Scheduled Opportunity, or null if
+ * none is found within `maxLookaheadDays` (default 366 -- generous enough to cover any weekly
+ * pattern, including a habit paused indefinitely with no future unpaused period). Purely a
+ * forward walk using the same isScheduledOpportunity primitive every other schedule calculation
+ * already uses -- the missing directional counterpart to scheduledOpportunitiesUpTo, added for
+ * Phase 4's recovery card suppression rule (docs/phase-4-plan.md section 2.4).
+ */
+export function nextScheduledOpportunityAfter(
+  periods: HabitSchedulePeriod[],
+  habit: Habit,
+  date: string,
+  maxLookaheadDays = 366,
+): string | null {
+  let cursor = addDays(date, 1);
+  for (let i = 0; i < maxLookaheadDays; i += 1) {
+    if (isScheduledOpportunity(periods, habit, cursor)) return cursor;
+    cursor = addDays(cursor, 1);
+  }
+  return null;
+}
+
 /** Every Scheduled Opportunity date for `habit`, from its creation through `today` inclusive, ascending. */
 export function scheduledOpportunitiesUpTo(
   habit: Habit,

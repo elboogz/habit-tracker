@@ -1,11 +1,11 @@
 // Recovery Event / Lapse / Recoverable Lapse Opportunity / Recovery Rate / Recovery Time.
 // See docs/phase-2-implementation-plan.md, Revision 2, section 3 for the full worked examples
 // and the reasoning behind each definition below -- summarized in the doc comments here.
-import type { Habit, HabitLog, HabitSchedulePeriod } from '../habit-types';
+import type { Habit, HabitLog, HabitSchedulePeriod, LapseReasonEntry } from '../habit-types';
 import { RECOVERY_CONFIG } from './config';
-import { daysBetween } from './day-key';
+import { addDays, daysBetween, localDayKeyOf } from './day-key';
 import { isDoneOnDay } from './habit-stats';
-import { scheduledOpportunitiesUpTo } from './schedule';
+import { nextScheduledOpportunityAfter, scheduledOpportunitiesUpTo } from './schedule';
 
 type OpportunityRecord = { date: string; completed: boolean };
 
@@ -170,6 +170,68 @@ export function averageRecoveryTime(
   if (lapses.length === 0) return null;
   const total = lapses.reduce((sum, lapse) => sum + lapse.recoveryTimeDays, 0);
   return total / lapses.length;
+}
+
+/** Phase 4 -- the still-unresolved trailing run of missed Scheduled Opportunities, if any. */
+export type OpenLapse = {
+  habitId: string;
+  firstMissedDate: string;
+  missedOpportunityCount: number;
+};
+
+/**
+ * The still-unresolved trailing run of missed Scheduled Opportunities, if any, evaluated as of
+ * the day before `today` -- today's own opportunity is never itself judged as missed (consistent
+ * with every other function in this module), so an open lapse can only be detected from
+ * yesterday's opportunity backward. Returns null if the habit's most recent opportunity before
+ * today was completed, or if it has no opportunities before today at all. A same-shape sibling of
+ * closedLapses, not a redesign of it -- closedLapses stops at the last *closed* run; this only
+ * looks at the tail run that hasn't closed (docs/phase-4-plan.md section 2.1).
+ */
+export function openLapse(
+  habit: Habit,
+  periods: HabitSchedulePeriod[],
+  logs: HabitLog[],
+  today: string,
+): OpenLapse | null {
+  const records = opportunityRecords(habit, periods, logs, addDays(today, -1));
+  let runStart: string | null = null;
+  let runLength = 0;
+  for (const record of records) {
+    if (!record.completed) {
+      if (runStart === null) runStart = record.date;
+      runLength += 1;
+    } else {
+      runStart = null;
+      runLength = 0;
+    }
+  }
+  if (runStart === null) return null;
+  return { habitId: habit.id, firstMissedDate: runStart, missedOpportunityCount: runLength };
+}
+
+/**
+ * Whether the recovery card should currently be suppressed for `habit` because of a synced
+ * LapseReasonEntry written during the *current* open lapse (i.e. created on or after the lapse's
+ * firstMissedDate) -- the mechanism behind Skip and Reflect's suppression (docs/phase-4-plan.md
+ * section 3.4). Returns the date suppression lifts, or null if no relevant entry exists (nothing
+ * to suppress from this source -- callers still need to check the local-only fallback for
+ * Continue/dismiss, section 8.6). Deliberately keys off each entry's createdAt (when the action
+ * was actually taken), not its missedOpportunityDate (what the action's fact is about).
+ */
+export function lapseReasonSuppressionUntil(
+  habit: Habit,
+  periods: HabitSchedulePeriod[],
+  lapseReasons: LapseReasonEntry[],
+  openLapseStart: string,
+  today: string,
+): string | null {
+  const relevant = lapseReasons.filter(
+    (entry) => entry.habitId === habit.id && localDayKeyOf(entry.createdAt) >= openLapseStart,
+  );
+  if (relevant.length === 0) return null;
+  const mostRecent = relevant.reduce((a, b) => (b.createdAt > a.createdAt ? b : a));
+  return nextScheduledOpportunityAfter(periods, habit, localDayKeyOf(mostRecent.createdAt));
 }
 
 function summarizeRate(instances: RecoverableLapseInstance[]): RecoveryRateResult {

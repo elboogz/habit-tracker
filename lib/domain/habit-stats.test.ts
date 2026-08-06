@@ -8,6 +8,7 @@ import {
   isDoneToday,
   longestStreak,
   recentHistory,
+  reducedTargetFor,
   streakForHabit,
   totalCompletions,
 } from './habit-stats';
@@ -44,6 +45,10 @@ function countHabit(target: number, overrides: Partial<Habit> = {}): Habit {
 
 function log(habitId: string, date: string, count = 1): HabitLog {
   return { id: `${habitId}-${date}-${count}-${Math.random()}`, habitId, date, count, loggedAt: `${date}T12:00:00.000Z`, updatedAt: `${date}T12:00:00.000Z` };
+}
+
+function reducedLog(habitId: string, date: string, count: number): HabitLog {
+  return { id: `${habitId}-${date}-reduced-${Math.random()}`, habitId, date, count, reduced: true, loggedAt: `${date}T12:00:00.000Z`, updatedAt: `${date}T12:00:00.000Z` };
 }
 
 describe('dayKey / addDays', () => {
@@ -87,6 +92,47 @@ describe('countForDay / isDoneOnDay', () => {
   it('is not done on a day with no logs', () => {
     const habit = simpleHabit();
     expect(isDoneOnDay(habit, [], '2026-01-01')).toBe(false);
+  });
+
+  // Phase 4 -- docs/phase-4-plan.md section 2.2: a reduced completion counts fully as done, not
+  // partial credit, so every downstream consumer treats the day as completed.
+  it('a reduced completion counts as done even when well below the full target', () => {
+    const habit = countHabit(8);
+    const logs = [reducedLog(habit.id, '2026-01-01', 2)];
+    expect(isDoneOnDay(habit, logs, '2026-01-01')).toBe(true);
+  });
+
+  it('a non-reduced log below target still does not count as done', () => {
+    const habit = countHabit(8);
+    const logs = [log(habit.id, '2026-01-01', 2)];
+    expect(isDoneOnDay(habit, logs, '2026-01-01')).toBe(false);
+  });
+
+  it('pre-Phase-4 logs with no reduced field are completely unaffected', () => {
+    const habit = countHabit(2);
+    const logs = [log(habit.id, '2026-01-01', 1), log(habit.id, '2026-01-01', 1)];
+    expect(isDoneOnDay(habit, logs, '2026-01-01')).toBe(true);
+  });
+});
+
+describe('reducedTargetFor (Phase 4)', () => {
+  it('is null for a simple (yes/no) habit -- no measurable target to derive a smaller version from', () => {
+    expect(reducedTargetFor(simpleHabit())).toBeNull();
+  });
+
+  it('is null for a count habit with no targetCount set', () => {
+    expect(reducedTargetFor(countHabit(8, { targetCount: undefined }))).toBeNull();
+  });
+
+  it('derives a default of roughly a third of the full target, floored at 1', () => {
+    expect(reducedTargetFor(countHabit(8))).toBe(3); // round(8/3) = 3
+    expect(reducedTargetFor(countHabit(30))).toBe(10);
+    expect(reducedTargetFor(countHabit(1))).toBe(1); // max(1, round(1/3)) = 1
+    expect(reducedTargetFor(countHabit(2))).toBe(1); // max(1, round(2/3)) = 1
+  });
+
+  it('prefers an explicit reducedTarget over the derived default', () => {
+    expect(reducedTargetFor(countHabit(8, { reducedTarget: 5 }))).toBe(5);
   });
 });
 

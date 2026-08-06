@@ -3,6 +3,7 @@ import {
   type HabitSchedulePeriod,
   isScheduledOpportunity,
   localDayKeyOf,
+  nextScheduledOpportunityAfter,
   parseDayKeyParts,
   scheduleForDate,
   scheduledOpportunitiesUpTo,
@@ -160,5 +161,32 @@ describe('scheduledOpportunitiesUpTo', () => {
     // 05-01 Fri, 05-02 Sat, 05-03 Sun, 05-04 Mon, 05-05 Tue, 05-06 Wed
     const result = scheduledOpportunitiesUpTo(h, periods, '2026-05-06');
     expect(result).toEqual(['2026-05-01', '2026-05-04', '2026-05-06']);
+  });
+});
+
+describe('nextScheduledOpportunityAfter (Phase 4 -- recovery card suppression)', () => {
+  it('returns the very next day for a daily habit', () => {
+    expect(nextScheduledOpportunityAfter([], habit(), '2026-05-01')).toBe('2026-05-02');
+  });
+
+  it('skips ahead to the next matching weekday for a Mon/Wed/Fri habit', () => {
+    const periods = [period({ days: [1, 3, 5] })]; // Mon/Wed/Fri
+    // 2026-05-04 is a Monday -- next scheduled opportunity is Wednesday 05-06.
+    expect(nextScheduledOpportunityAfter(periods, habit(), '2026-05-04')).toBe('2026-05-06');
+    // From a Wednesday, next is Friday.
+    expect(nextScheduledOpportunityAfter(periods, habit(), '2026-05-06')).toBe('2026-05-08');
+  });
+
+  it('returns null for a habit paused indefinitely with no future unpaused period', () => {
+    const periods = [period({ paused: true })];
+    expect(nextScheduledOpportunityAfter(periods, habit(), '2026-05-01', 30)).toBeNull();
+  });
+
+  it('finds the reopening date across a bounded pause', () => {
+    const periods = [
+      period({ id: 'p1', effectiveFrom: '2026-05-01', paused: true }),
+      period({ id: 'p2', effectiveFrom: '2026-05-10', paused: false, days: 'daily' }),
+    ];
+    expect(nextScheduledOpportunityAfter(periods, habit(), '2026-05-02')).toBe('2026-05-10');
   });
 });

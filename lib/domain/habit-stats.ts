@@ -15,13 +15,37 @@ export function countForDay(logs: HabitLog[], habitId: string, date: string): nu
   return logsForHabitOnDay(logs, habitId, date).reduce((sum, log) => sum + log.count, 0);
 }
 
+/**
+ * A reduced ("smaller version") completion counts fully as done for the day -- not partial
+ * credit -- so every downstream consumer (streaks, consistency, recovery, momentum, challenge
+ * progress) automatically treats it as a completed day with no further changes (Phase 4, see
+ * docs/phase-4-plan.md section 2.2). Additive and backward-compatible: no pre-Phase-4 HabitLog
+ * has a `reduced` field, so every existing computation over existing data is byte-for-byte
+ * unchanged.
+ */
 export function isDoneOnDay(habit: Habit, logs: HabitLog[], date: string): boolean {
-  const total = countForDay(logs, habit.id, date);
+  const dayLogs = logsForHabitOnDay(logs, habit.id, date);
+  if (dayLogs.some((log) => log.reduced)) return true;
+  const total = dayLogs.reduce((sum, log) => sum + log.count, 0);
   return habit.type === 'count' ? total >= (habit.targetCount ?? 1) : total > 0;
 }
 
 export function isDoneToday(habit: Habit, logs: HabitLog[]): boolean {
   return isDoneOnDay(habit, logs, dayKey());
+}
+
+/**
+ * The target to use for a "smaller version" of this habit (Phase 4's recovery card), or null if
+ * none should be offered. Only ever non-null for habits with a measurable target -- today, the
+ * data model has exactly one kind (a count habit's targetCount), so this check and "habits with
+ * measurable targets" describe the same set; see docs/phase-4-plan.md section 8.1. The `/3`
+ * default (floored at 1) reproduces the master spec's own worked examples (30 min -> 10 min;
+ * 8 glasses -> "focus on the next glass") without inventing a new ratio.
+ */
+export function reducedTargetFor(habit: Habit): number | null {
+  if (habit.type !== 'count' || !habit.targetCount) return null;
+  if (habit.reducedTarget) return habit.reducedTarget;
+  return Math.max(1, Math.round(habit.targetCount / 3));
 }
 
 /**
