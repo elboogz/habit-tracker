@@ -403,6 +403,7 @@ type HabitStore = {
     emoji: string;
     type: HabitType;
     targetCount?: number;
+    reducedTarget?: number;
     reminderTimes?: string[];
   }) => Habit;
   updateHabit: (habit: Habit) => void;
@@ -607,6 +608,7 @@ export function HabitStoreProvider({ children }: { children: ReactNode }) {
           emoji: input.emoji,
           type: input.type,
           targetCount: input.type === 'count' ? input.targetCount : undefined,
+          reducedTarget: input.type === 'count' ? input.reducedTarget : undefined,
           reminderTimes: input.reminderTimes && input.reminderTimes.length > 0 ? input.reminderTimes : undefined,
           createdAt: now,
           updatedAt: now,

@@ -5,6 +5,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { reducedTargetFor } from '@/lib/habit-stats';
 import type { Habit } from '@/lib/habit-types';
 
 /**
@@ -13,19 +14,19 @@ import type { Habit } from '@/lib/habit-types';
  * a permanent banner -- the parent screen decides eligibility (openLapse + isScheduledOpportunity +
  * suppression) and passes down only the habits currently eligible to show here.
  *
- * "Do a smaller version" is intentionally not one of this component's rows yet -- it ships in the
- * commit dedicated to it (docs/phase-4-plan.md section 9, commit 5). "Adjust the schedule",
- * "Pause this habit", and "Reflect" render as visible-but-disabled rows here and come alive in the
- * three commits that follow, per the approved commit sequence.
+ * "Adjust the schedule", "Pause this habit", and "Reflect" render as visible-but-disabled rows and
+ * come alive in the three commits that follow, per the approved commit sequence.
  */
 export function RecoveryCard({
   eligibleHabits,
   onContinue,
+  onSmallerVersion,
   onSkip,
   onDismissAll,
 }: {
   eligibleHabits: Habit[];
   onContinue: (habit: Habit) => void;
+  onSmallerVersion: (habit: Habit) => void;
   onSkip: (habit: Habit) => void;
   onDismissAll: () => void;
 }) {
@@ -88,6 +89,21 @@ export function RecoveryCard({
                     ]}>
                     <ThemedText style={{ color: colors.background, fontWeight: '600' }}>Continue today</ThemedText>
                   </Pressable>
+
+                  {reducedTargetFor(habit) !== null && (
+                    <Pressable
+                      onPress={() => {
+                        onSmallerVersion(habit);
+                        setOpenHabitId(null);
+                      }}
+                      style={({ pressed }) => [
+                        styles.optionButton,
+                        { borderColor: colors.icon },
+                        pressed && { opacity: 0.7 },
+                      ]}>
+                      <ThemedText>Do a smaller version</ThemedText>
+                    </Pressable>
+                  )}
 
                   <Pressable
                     onPress={() => {

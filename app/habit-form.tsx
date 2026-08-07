@@ -10,8 +10,9 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { alertMessage, confirmAction } from '@/lib/confirm';
+import { reducedTargetFor } from '@/lib/habit-stats';
 import { useHabitStore } from '@/lib/habit-store';
-import { EMOJI_CHOICES, type HabitType } from '@/lib/habit-types';
+import { EMOJI_CHOICES, type Habit, type HabitType } from '@/lib/habit-types';
 
 const EMOJI_COLUMNS = 5;
 const EMOJI_GAP = 8;
@@ -33,8 +34,21 @@ export default function HabitFormScreen() {
   const [emoji, setEmoji] = useState(editingHabit?.emoji ?? EMOJI_CHOICES[0]);
   const [type, setType] = useState<HabitType>(editingHabit?.type ?? 'simple');
   const [targetCount, setTargetCount] = useState(editingHabit?.targetCount ?? 3);
+  const [reducedTarget, setReducedTarget] = useState(
+    editingHabit?.reducedTarget ??
+      reducedTargetFor({ type: 'count', targetCount: editingHabit?.targetCount ?? 3 } as Habit) ??
+      1,
+  );
   const [reminderTimes, setReminderTimes] = useState<string[]>(editingHabit?.reminderTimes ?? []);
   const [emojiRowWidth, setEmojiRowWidth] = useState(0);
+
+  function handleTargetCountChange(next: number) {
+    const clamped = Math.max(2, Math.min(20, next));
+    setTargetCount(clamped);
+    // A "smaller version" must stay strictly below the full target (docs/phase-4-plan.md
+    // section 10's edge case) -- clamp it down if the full target just shrank past it.
+    setReducedTarget((current) => Math.min(current, clamped - 1));
+  }
 
   const emojiSize =
     emojiRowWidth > 0 ? (emojiRowWidth - EMOJI_GAP * (EMOJI_COLUMNS - 1)) / EMOJI_COLUMNS : 44;
@@ -53,10 +67,11 @@ export default function HabitFormScreen() {
         emoji,
         type,
         targetCount: type === 'count' ? targetCount : undefined,
+        reducedTarget: type === 'count' ? reducedTarget : undefined,
         reminderTimes: reminderTimes.length > 0 ? reminderTimes : undefined,
       });
     } else {
-      addHabit({ name: trimmed, emoji, type, targetCount, reminderTimes });
+      addHabit({ name: trimmed, emoji, type, targetCount, reducedTarget, reminderTimes });
     }
     router.back();
   }
@@ -148,7 +163,7 @@ export default function HabitFormScreen() {
               <ThemedText type="defaultSemiBold">Daily target</ThemedText>
               <ThemedView style={styles.stepperRow}>
                 <Pressable
-                  onPress={() => setTargetCount((current) => Math.max(2, current - 1))}
+                  onPress={() => handleTargetCountChange(targetCount - 1)}
                   style={[styles.stepperButton, { borderColor: colors.icon }]}>
                   <ThemedText style={{ fontSize: 20 }}>–</ThemedText>
                 </Pressable>
@@ -156,7 +171,31 @@ export default function HabitFormScreen() {
                   {targetCount}× per day
                 </ThemedText>
                 <Pressable
-                  onPress={() => setTargetCount((current) => Math.min(20, current + 1))}
+                  onPress={() => handleTargetCountChange(targetCount + 1)}
+                  style={[styles.stepperButton, { borderColor: colors.icon }]}>
+                  <ThemedText style={{ fontSize: 20 }}>+</ThemedText>
+                </Pressable>
+              </ThemedView>
+            </ThemedView>
+          )}
+
+          {type === 'count' && (
+            <ThemedView style={styles.section}>
+              <ThemedText type="defaultSemiBold">Smaller version</ThemedText>
+              <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
+                What the recovery card’s “Do a smaller version” logs on a tough day — a lighter target that still counts as done.
+              </ThemedText>
+              <ThemedView style={styles.stepperRow}>
+                <Pressable
+                  onPress={() => setReducedTarget((current) => Math.max(1, current - 1))}
+                  style={[styles.stepperButton, { borderColor: colors.icon }]}>
+                  <ThemedText style={{ fontSize: 20 }}>–</ThemedText>
+                </Pressable>
+                <ThemedText type="defaultSemiBold" style={styles.stepperValue}>
+                  {reducedTarget}× per day
+                </ThemedText>
+                <Pressable
+                  onPress={() => setReducedTarget((current) => Math.min(targetCount - 1, current + 1))}
                   style={[styles.stepperButton, { borderColor: colors.icon }]}>
                   <ThemedText style={{ fontSize: 20 }}>+</ThemedText>
                 </Pressable>

@@ -17,6 +17,7 @@ import {
   dayKey,
   isDoneOnDay,
   isDoneToday,
+  reducedTargetFor,
   totalCompletions,
 } from '@/lib/habit-stats';
 import { useHabitStore } from '@/lib/habit-store';
@@ -33,6 +34,16 @@ const RECOVERY_MESSAGES = (total: number) => [
   'That is a recovery. Coming back is the skill that builds lasting habits.',
   'You returned after a missed day. That matters more than maintaining a perfect record.',
   `Back on track. Your ${total} total completions are still yours.`,
+];
+
+// Phase 4 (docs/phase-4-plan.md section 3.6) -- copy-only variant of RECOVERY_MESSAGES for a
+// reduced ("smaller version") completion that resolves a Recovery Event: acknowledges the
+// smaller scope without ever framing it as lesser. Same big:true celebration strength as a full
+// recovery, since resolving the lapse is what matters, not the size of the completion.
+const REDUCED_RECOVERY_MESSAGES = (total: number) => [
+  'A smaller version still counts. Your progress is still moving.',
+  'Showing up in a smaller way is still showing up.',
+  `That still counts. Your ${total} total completions are still yours.`,
 ];
 
 // Every 25 completions is a quiet milestone -- routine celebration strength (never big: true,
@@ -73,7 +84,7 @@ export default function TodayScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const { state, logHabit, unlogHabit, setChallengeStatus, addLapseReason } = useHabitStore();
+  const { state, logHabit, unlogHabit, setChallengeStatus, addLapseReason, logReducedCompletion } = useHabitStore();
   const { celebration, fire, clear } = useCelebration(state.soundEnabled);
   const { dismissals, dismiss } = useRecoveryCardDismissals();
 
@@ -111,6 +122,24 @@ export default function TodayScreen() {
 
   function handleRecoverySkip(habit: Habit) {
     addLapseReason({ habitId: habit.id, missedOpportunityDate: today, reason: null, skipped: true });
+  }
+
+  function handleRecoverySmallerVersion(habit: Habit) {
+    const target = reducedTargetFor(habit);
+    if (target === null) return; // the card only renders this option when non-null
+
+    logReducedCompletion(habit.id);
+
+    const syntheticLog = { id: 'pending', habitId: habit.id, date: today, count: target, reduced: true, loggedAt: '', updatedAt: '' };
+    const nextLogs = [...logs, syntheticLog];
+    const total = totalCompletions(habit.id, nextLogs);
+
+    if (isRecoveryEvent(habit, schedulePeriods, nextLogs, today, today)) {
+      const messages = REDUCED_RECOVERY_MESSAGES(total);
+      fire(habit.emoji, messages[total % messages.length], true);
+      return;
+    }
+    fire(habit.emoji, 'A smaller version still counts.');
   }
 
   function handleRecoveryDismissAll() {
@@ -211,6 +240,7 @@ export default function TodayScreen() {
           <RecoveryCard
             eligibleHabits={eligibleHabits}
             onContinue={handleRecoveryContinue}
+            onSmallerVersion={handleRecoverySmallerVersion}
             onSkip={handleRecoverySkip}
             onDismissAll={handleRecoveryDismissAll}
           />
