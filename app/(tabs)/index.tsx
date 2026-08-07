@@ -21,7 +21,7 @@ import {
   totalCompletions,
 } from '@/lib/habit-stats';
 import { useHabitStore } from '@/lib/habit-store';
-import type { Habit, HabitSchedulePeriod, LapseReasonEntry } from '@/lib/habit-types';
+import type { Habit, HabitSchedulePeriod, LapseReasonEntry, LapseReasonKey } from '@/lib/habit-types';
 import { useRecoveryCardDismissals, type RecoveryCardDismissals } from '@/lib/recovery-card-dismissals';
 import { useCelebration } from '@/lib/use-celebration';
 
@@ -155,6 +155,30 @@ export default function TodayScreen() {
     pauseHabit(habit.id);
   }
 
+  function handleReflectChoice(habit: Habit, reason: LapseReasonKey, note?: string) {
+    // Reflect engages with the lapse as a whole, so it's keyed to the lapse's own origin date --
+    // unlike the card-level Skip, which is about today's specific opportunity (docs/phase-4-plan.md
+    // section 4.1).
+    const lapse = openLapse(habit, schedulePeriods, logs, today);
+    addLapseReason({
+      habitId: habit.id,
+      missedOpportunityDate: lapse?.firstMissedDate ?? today,
+      reason,
+      note,
+      skipped: false,
+    });
+  }
+
+  function handleReflectSkip(habit: Habit) {
+    const lapse = openLapse(habit, schedulePeriods, logs, today);
+    addLapseReason({
+      habitId: habit.id,
+      missedOpportunityDate: lapse?.firstMissedDate ?? today,
+      reason: null,
+      skipped: true,
+    });
+  }
+
   function handleRecoveryDismissAll() {
     for (const habit of eligibleHabits) {
       dismiss(habit.id, nextScheduledOpportunityAfter(schedulePeriods, habit, today));
@@ -257,6 +281,8 @@ export default function TodayScreen() {
             onSkip={handleRecoverySkip}
             onPause={handleRecoveryPause}
             onAdjustSchedule={handleRecoveryAdjustSchedule}
+            onReflectChoice={handleReflectChoice}
+            onReflectSkip={handleReflectSkip}
             onDismissAll={handleRecoveryDismissAll}
           />
 
