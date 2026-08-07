@@ -1,4 +1,5 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -7,9 +8,19 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { confirmAction } from '@/lib/confirm';
 import { averageRecoveryTime, recoveryRate } from '@/lib/domain/recovery';
-import { consistency, dayKey, longestStreak, recentHistory, streakForHabit, totalCompletions } from '@/lib/habit-stats';
+import {
+  consistency,
+  countForDay,
+  dayKey,
+  longestStreak,
+  recentHistory,
+  streakForHabit,
+  totalCompletions,
+} from '@/lib/habit-stats';
 import { useHabitStore } from '@/lib/habit-store';
+import type { Habit, HabitLog } from '@/lib/habit-types';
 
 const HISTORY_DAYS = 28;
 
@@ -37,7 +48,8 @@ export default function HabitDetailScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const { state } = useHabitStore();
+  const { state, setLogAmountForDate } = useHabitStore();
+  const [correctingDate, setCorrectingDate] = useState<string | null>(null);
 
   const habit = state.habits.find((candidate) => candidate.id === id);
 
@@ -114,7 +126,25 @@ export default function HabitDetailScreen() {
 
           <ThemedView style={styles.section}>
             <ThemedText type="defaultSemiBold">Last {HISTORY_DAYS} days</ThemedText>
-            <HabitCalendar history={history} fillColor={colors.tint} emptyColor={colors.icon} textColor={colors.text} />
+            <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
+              Tap any of the last 6 days (dashed border) to add or correct a completion.
+            </ThemedText>
+            <HabitCalendar
+              history={history}
+              fillColor={colors.tint}
+              emptyColor={colors.icon}
+              textColor={colors.text}
+              onDayPress={(date) => setCorrectingDate((current) => (current === date ? null : date))}
+            />
+            {correctingDate && (
+              <DayCorrectionPanel
+                habit={habit}
+                date={correctingDate}
+                logs={state.logs}
+                onSetAmount={(amount) => setLogAmountForDate(habit.id, correctingDate, amount)}
+                onClose={() => setCorrectingDate(null)}
+              />
+            )}
           </ThemedView>
 
           <ThemedView style={styles.section}>
@@ -142,6 +172,100 @@ export default function HabitDetailScreen() {
           </Pressable>
         </ScrollView>
       </SafeAreaView>
+    </ThemedView>
+  );
+}
+
+/**
+ * Inline retroactive-entry panel (docs/phase-4-plan.md section 7.1) -- not a new screen. Adds or
+ * corrects a single day's total logged count via setLogAmountForDate, which never sets `reduced`
+ * (section 7.3 -- retroactive editing corrects a count, it does not invent a "smaller version").
+ * Zeroing out an existing completion is confirmed via the same generic confirmAction pattern used
+ * elsewhere in the app (section 7.4); every other change (adding, or correcting to a different
+ * nonzero count) needs no confirmation.
+ */
+function DayCorrectionPanel({
+  habit,
+  date,
+  logs,
+  onSetAmount,
+  onClose,
+}: {
+  habit: Habit;
+  date: string;
+  logs: HabitLog[];
+  onSetAmount: (amount: number) => void;
+  onClose: () => void;
+}) {
+  const colorScheme = useColorScheme();
+  const colors = Colors[colorScheme ?? 'light'];
+  const currentCount = countForDay(logs, habit.id, date);
+
+  function requestSetAmount(amount: number) {
+    if (amount === 0 && currentCount > 0) {
+      confirmAction(
+        'Remove this completion?',
+        `This removes your logged completion for ${formatLogDate(date)}.`,
+        'Remove',
+        () => onSetAmount(0),
+      );
+      return;
+    }
+    onSetAmount(amount);
+  }
+
+  if (habit.type === 'simple') {
+    const done = currentCount > 0;
+    return (
+      <ThemedView style={[styles.correctionPanel, { borderColor: colors.tint }]}>
+        <ThemedText type="defaultSemiBold">{formatLogDate(date)}</ThemedText>
+        <Pressable
+          onPress={() => {
+            requestSetAmount(done ? 0 : 1);
+            if (done) return; // wait for confirmAction before closing
+            onClose();
+          }}
+          style={({ pressed }) => [
+            styles.correctionToggle,
+            { borderColor: colors.tint },
+            done && { backgroundColor: colors.tint },
+            pressed && { opacity: 0.7 },
+          ]}>
+          <ThemedText style={{ color: done ? colors.background : colors.text, fontWeight: '600' }}>
+            {done ? 'Mark not done' : 'Mark done'}
+          </ThemedText>
+        </Pressable>
+      </ThemedView>
+    );
+  }
+
+  return (
+    <ThemedView style={[styles.correctionPanel, { borderColor: colors.tint }]}>
+      <ThemedText type="defaultSemiBold">{formatLogDate(date)}</ThemedText>
+      <ThemedView style={styles.countStepperRow}>
+        <Pressable
+          onPress={() => requestSetAmount(Math.max(0, currentCount - 1))}
+          disabled={currentCount === 0}
+          style={({ pressed }) => [
+            styles.stepperButton,
+            { borderColor: colors.icon },
+            currentCount === 0 && { opacity: 0.3 },
+            pressed && { opacity: 0.7 },
+          ]}>
+          <ThemedText style={{ fontSize: 18 }}>−</ThemedText>
+        </Pressable>
+        <ThemedText type="defaultSemiBold" style={{ minWidth: 60, textAlign: 'center' }}>
+          {currentCount}/{habit.targetCount}
+        </ThemedText>
+        <Pressable
+          onPress={() => requestSetAmount(currentCount + 1)}
+          style={({ pressed }) => [styles.stepperButton, { borderColor: colors.icon }, pressed && { opacity: 0.7 }]}>
+          <ThemedText style={{ fontSize: 18 }}>+</ThemedText>
+        </Pressable>
+      </ThemedView>
+      <Pressable onPress={onClose} style={({ pressed }) => [pressed && { opacity: 0.6 }]}>
+        <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>Done</ThemedText>
+      </Pressable>
     </ThemedView>
   );
 }
@@ -212,5 +336,31 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 16,
     borderWidth: 1.5,
+  },
+  correctionPanel: {
+    gap: 10,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    alignItems: 'center',
+  },
+  correctionToggle: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  countStepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  stepperButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
