@@ -131,8 +131,21 @@ function isRebuilding(
 /**
  * The raw, unhysteresed classification as of `asOfDate` -- recomputed fresh from schedule + logs
  * only, no memory of any prior evaluation. Evaluation order (first match wins): insufficient_data
- * -> recovering -> quiet -> best of {thriving, steady, building} -> rebuilding fallback -> building
- * (least committal default, only reached in genuinely ambiguous transition edges).
+ * -> recovering -> quiet -> thriving/steady -> rebuilding -> building (least committal default,
+ * reached whenever nothing more specific claims the day).
+ *
+ * `rebuilding` is checked ahead of `building`, not after it as a fallback -- see
+ * docs/phase-4-completion-report.md's "Momentum evaluation precedence" post-completion fix. With
+ * `building`'s bar this low (60% over just 3 opportunities, only required to improve on the prior
+ * window when one exists), it would otherwise claim nearly every day immediately following a
+ * qualifying (>=3-miss) lapse's recovery before `rebuilding`'s own 3-opportunity confirmation
+ * window could ever complete, making `rebuilding` reachable as a *candidate* but never as a
+ * *confirmed*, displayed state -- proven by exhaustive search over the full history space up to
+ * 14 opportunities prior to this fix. `thriving`/`steady` still take precedence over `rebuilding`
+ * when genuinely met, since sustained strong evidence should supersede a trailing "still
+ * rebuilding" read, matching the plan's `long_term_improving_trajectory` worked example
+ * (`docs/phase-2-implementation-plan.md` section 8's fixture table: confirmed sequence
+ * insufficient_data -> quiet/rebuilding -> building -> steady -> thriving).
  */
 export function candidateStateAt(
   habit: Habit,
@@ -150,9 +163,10 @@ export function candidateStateAt(
 
   if (meetsRateWindow(records, MOMENTUM_CONFIG.thriving, { requireNoLapseAtAll: true })) return 'thriving';
   if (meetsRateWindow(records, MOMENTUM_CONFIG.steady, { requireNoOpenLapse: true })) return 'steady';
-  if (meetsBuilding(records)) return 'building';
 
   if (isRebuilding(habit, periods, logs, asOfDate, records)) return 'rebuilding';
+
+  if (meetsBuilding(records)) return 'building';
 
   return 'building';
 }
@@ -183,7 +197,108 @@ export function confirmedStateAt(
 ): MomentumStateKey {
   const opportunities = scheduledOpportunitiesUpTo(habit, periods, today);
   const candidates = opportunities.map((date) => candidateStateAt(habit, periods, logs, date));
-  return computeConfirmedState(candidates, 'insufficient_data', MOMENTUM_CONFIG.transitionConfirmationOpportunities);
+  return computeConfirmedMomentumState(candidates);
+}
+
+/**
+ * The ordered evidence chain used only by `computeConfirmedMomentumState`'s Rule 2 below -- NOT a
+ * claim that all seven `MomentumStateKey` values form a single "goodness" ordering (the product
+ * deliberately avoids that framing; see docs/phase-3-experience-plan.md section 7.1's non-shame
+ * labeling). Only these four are chain-comparable: each requires strictly more/stronger positive
+ * evidence than the last (window 0/3/5/8 opportunities, minimum completion rate --/60%/80%/90%,
+ * per MOMENTUM_CONFIG). `recovering`, `rebuilding`, and `quiet` are classified by lapse
+ * recency/length, not a rate bar, and are deliberately left out -- an off-chain state can only
+ * ever be entered or left via Rule 1 (three identical consecutive candidates), exactly as before.
+ */
+const EVIDENCE_CHAIN: MomentumStateKey[] = ['insufficient_data', 'building', 'steady', 'thriving'];
+const EVIDENCE_RANK: Partial<Record<MomentumStateKey, number>> = Object.fromEntries(
+  EVIDENCE_CHAIN.map((state, index) => [state, index]),
+);
+
+/**
+ * Momentum-specific hysteresis. Fixes a real gap in the generic `computeConfirmedState` below --
+ * found by the exhaustive today-open-vs-today-completed monotonicity search over the
+ * `insufficient_data < building < steady < thriving` chain (0 violations at the candidate level,
+ * 1 at the confirmed level): a habit completed on days 1-4 (candidates insufficient_data,
+ * insufficient_data, building, building) produces candidate `steady` on day 5 if day 5 is also
+ * completed (a 5-opportunity 100% window now qualifies). Plain `computeConfirmedState` resets its
+ * pending count on any change of candidate value, discarding `building`'s already-accumulated
+ * count of 2, so confirmed is left at `insufficient_data` -- *lower* than the `building` badge the
+ * same habit would show had day 5 been left incomplete. Completing today should never make the
+ * displayed badge read worse.
+ *
+ * A first fix (kept here only as a rejected alternative in history/discussion, not in code) let a
+ * pending run continue past a *stronger* chain candidate by tracking a "floor" and confirming it
+ * once held (directly or via stronger stand-ins) for 3 opportunities. That resolved the target
+ * violation but broke the locked `perfect_completion_history` fixture
+ * (docs/phase-2-implementation-plan.md section 8: "confirmed at opportunity 10" for `thriving`)
+ * by delaying *every* smoothly-improving trajectory by roughly one confirmation cycle -- inherent
+ * to "a rung must be earned as its own 3-in-a-row before the next rung's evidence can count",
+ * since a stronger candidate arriving mid-run got spent confirming the weaker floor instead of
+ * contributing to its own tally.
+ *
+ * **Implemented instead: confirmation as a property of the trailing `transitionConfirmationOpportunities`
+ * candidates, not a stateful pending counter that one rung "owns" and therefore consumes.** At
+ * every opportunity once at least that many candidates exist, look at the trailing window and
+ * apply, in order:
+ *
+ * 1. If all candidates in the window are identical, confirm that value. Unchanged from the
+ *    original algorithm; this is the *only* rule that ever governs the off-chain states `quiet`,
+ *    `recovering`, `rebuilding`, exactly as before, and the *only* rule that can ever move the
+ *    confirmed state to a lower rung (a decline within the chain, e.g. `thriving` -> `building`,
+ *    still requires 3 consecutive identical weaker candidates -- one anomalous reading is never
+ *    enough, same hysteresis protection against volatile decline as always).
+ * 2. Otherwise, if every candidate in the window is chain-comparable *and* the current confirmed
+ *    state is itself chain-comparable, take the minimum rank across the window. If that rank is
+ *    strictly higher than the current confirmed state's rank, raise the confirmed state to it.
+ *    This can only ever raise -- never lower -- and it never fires against an off-chain confirmed
+ *    state (`quiet`/`recovering`/`rebuilding` can only be left via Rule 1's exact-match rule,
+ *    since the approved specification gives no ordering between an off-chain state and the chain).
+ * 3. Otherwise, the confirmed state is unchanged.
+ *
+ * Why this doesn't weaken the 3-opportunity confirmation requirement, and how it differs from the
+ * rejected reading above: the requirement is satisfied as "the trailing 3 opportunities each
+ * showed *at least* this much evidence" -- Rule 2 takes the *minimum* of the window, so it can
+ * only ever confirm a rung *at or below* what all 3 opportunities support, never a rung stronger
+ * than any of them individually earned. `steady` can still only ever confirm via Rule 1 (3
+ * trailing candidates that are all exactly `steady`) or via Rule 2 crediting `steady` as the
+ * window's minimum (which requires none of the 3 to be weaker than `steady`) -- never by
+ * absorbing a weaker pending run the way the rejected reading did. Because Rule 1 alone still
+ * drives every same-value 3-in-a-row exactly as before, a smoothly improving trajectory's real
+ * transition timing is unaffected by Rule 2's extra, purely-informative early nudge to a lower
+ * rung it has already earned: `perfect_completion_history`
+ * (docs/phase-2-implementation-plan.md section 8) still confirms `steady` at opportunity 7 and
+ * `thriving` at opportunity 10, exactly as locked -- proven directly in
+ * `lib/domain/momentum.exhaustive.test.ts`, whose "unranked" console output and 12-day exhaustive
+ * chain sweep (0 violations at both candidate and confirmed level) back the rest of this comment;
+ * see docs/phase-4-completion-report.md's "Momentum confirmation mechanism" section for the full
+ * writeup.
+ */
+export function computeConfirmedMomentumState(candidates: MomentumStateKey[]): MomentumStateKey {
+  let confirmed: MomentumStateKey = 'insufficient_data';
+  const windowSize = MOMENTUM_CONFIG.transitionConfirmationOpportunities;
+
+  for (let i = 0; i < candidates.length; i += 1) {
+    if (i + 1 < windowSize) continue; // not enough opportunities yet for a trailing window
+
+    const window = candidates.slice(i - windowSize + 1, i + 1);
+
+    if (window.every((c) => c === window[0])) {
+      confirmed = window[0];
+      continue;
+    }
+
+    const confirmedRank = EVIDENCE_RANK[confirmed];
+    if (confirmedRank !== undefined && window.every((c) => EVIDENCE_RANK[c] !== undefined)) {
+      const windowMinRank = Math.min(...window.map((c) => EVIDENCE_RANK[c] as number));
+      if (windowMinRank > confirmedRank) {
+        confirmed = EVIDENCE_CHAIN[windowMinRank];
+      }
+    }
+    // else: neither rule applies -- confirmed is unchanged (Rule 3).
+  }
+
+  return confirmed;
 }
 
 /**

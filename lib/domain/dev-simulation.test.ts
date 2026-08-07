@@ -10,10 +10,10 @@
 // rather than inventing alternative definitions.
 import type { Habit, HabitLog } from '../habit-types';
 import { addDays } from './day-key';
-import { backdatedCreatedAt } from './dev-simulation';
+import { backdatedCreatedAt, scenarioPattern, simulatedLogsFor, type ScenarioKey } from './dev-simulation';
 import { consistency, totalCompletions } from './habit-stats';
 import { candidateStateAt, confirmedStateAt } from './momentum';
-import { closedLapses, recoveryEvents, recoveryRate } from './recovery';
+import { closedLapses, openLapse, recoveryEvents, recoveryRate } from './recovery';
 import { type HabitSchedulePeriod, scheduledOpportunitiesUpTo } from './schedule';
 
 function habit(overrides: Partial<Habit> = {}): Habit {
@@ -239,5 +239,73 @@ describe('developer simulation never creates future Scheduled Opportunities', ()
     const createdAt = '2026-01-01T00:00:00.000Z';
     // backdatedCreatedAt only ever moves createdAt earlier, so a future-dated entry is a no-op.
     expect(backdatedCreatedAt(createdAt, ['2099-01-01'])).toBe(createdAt);
+  });
+});
+
+describe('scenario simulator produces the domain output each scenario is meant to exercise', () => {
+  // Runs each scenario through the exact same pipeline the debugSimulateScenario reducer case
+  // uses (scenarioPattern -> backdatedCreatedAt -> simulatedLogsFor), then checks the result
+  // against the real domain functions -- proving these buttons generate genuine, valid history
+  // rather than special-cased data, per the "do not bypass the domain layer" requirement.
+  const today = '2026-02-20';
+
+  function applyScenario(scenario: ScenarioKey) {
+    const pattern = scenarioPattern(scenario, today);
+    const windowDates = pattern.map((day) => day.date);
+    const simulated = habit({ createdAt: `${today}T09:00:00.000Z` });
+    const fixed = { ...simulated, createdAt: backdatedCreatedAt(simulated.createdAt, windowDates) };
+    const logs = simulatedLogsFor('h1', pattern, 1, `${today}T12:00:00.000Z`);
+    return { habit: fixed, logs };
+  }
+
+  it('missYesterday opens a 1-day recoverable lapse, today left open for the Recovery Card', () => {
+    const { habit: h, logs } = applyScenario('missYesterday');
+    expect(openLapse(h, [], logs, today)).toEqual({
+      habitId: 'h1',
+      firstMissedDate: addDays(today, -1),
+      missedOpportunityCount: 1,
+    });
+  });
+
+  it('missTwoConsecutive opens a 2-day recoverable lapse, today left open', () => {
+    const { habit: h, logs } = applyScenario('missTwoConsecutive');
+    expect(openLapse(h, [], logs, today)).toEqual({
+      habitId: 'h1',
+      firstMissedDate: addDays(today, -2),
+      missedOpportunityCount: 2,
+    });
+  });
+
+  it('recoverToday fires a Recovery Event on today\'s date', () => {
+    const { habit: h, logs } = applyScenario('recoverToday');
+    expect(recoveryEvents(h, [], logs, today)).toEqual([{ habitId: 'h1', date: today }]);
+  });
+
+  it('recoverAfterMultipleMisses closes a >=3-opportunity lapse on today\'s date', () => {
+    const { habit: h, logs } = applyScenario('recoverAfterMultipleMisses');
+    const lapses = closedLapses(h, [], logs, today);
+    expect(lapses).toHaveLength(1);
+    expect(lapses[0].recoveredDate).toBe(today);
+    expect(lapses[0].missedOpportunityCount).toBeGreaterThanOrEqual(3);
+  });
+
+  it('quietStretch confirms the quiet Momentum State', () => {
+    const { habit: h, logs } = applyScenario('quietStretch');
+    expect(confirmedStateAt(h, [], logs, today)).toBe('quiet');
+  });
+
+  it('rebuilding confirms the rebuilding Momentum State', () => {
+    const { habit: h, logs } = applyScenario('rebuilding');
+    expect(confirmedStateAt(h, [], logs, today)).toBe('rebuilding');
+  });
+
+  it('building confirms the building Momentum State', () => {
+    const { habit: h, logs } = applyScenario('building');
+    expect(confirmedStateAt(h, [], logs, today)).toBe('building');
+  });
+
+  it('thriving confirms the thriving Momentum State', () => {
+    const { habit: h, logs } = applyScenario('thriving');
+    expect(confirmedStateAt(h, [], logs, today)).toBe('thriving');
   });
 });

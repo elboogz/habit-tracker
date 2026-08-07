@@ -189,3 +189,67 @@ describe('long-term trajectories', () => {
     expect(confirmedStateAt(h, [], logs, firstBadDay)).toBe('steady');
   });
 });
+
+// Post-completion fix (see docs/phase-4-completion-report.md, "Momentum evaluation precedence"):
+// isRebuilding is now checked ahead of meetsBuilding in candidateStateAt, so a qualifying (>=3-miss)
+// lapse's recovery can actually hold 'rebuilding' for its own 3-opportunity confirmation window
+// instead of building's much looser bar claiming those same days first. Exhaustively verified
+// against every binary history up to 14 opportunities before writing these fixtures.
+describe('rebuilding evaluation precedence (post-completion fix)', () => {
+  it('a >=3-miss lapse followed by resumed completion reaches candidate rebuilding', () => {
+    const h = habit('2026-01-01');
+    const logs = [log('2026-01-01'), log('2026-01-05')]; // 01-02..01-04 missed (3), 01-05 recovers it
+    expect(candidateStateAt(h, [], logs, '2026-01-05')).toBe('rebuilding');
+  });
+
+  it('rebuilding becomes the confirmed state once its candidate holds for 3 consecutive opportunities, not before', () => {
+    const h = habit('2026-01-01');
+    // Fresh habit, 4 missed opportunities, then 3 held completions: candidates run
+    // insufficient_data, insufficient_data, quiet, quiet, rebuilding, rebuilding, rebuilding.
+    const dates = datesFrom('2026-01-01', 7);
+    const logs = [dates[4], dates[5], dates[6]].map(log); // days 5-7 completed, days 1-4 missed
+
+    // Only 2 consecutive rebuilding candidates so far (days 5-6) -- not yet confirmed.
+    expect(confirmedStateAt(h, [], logs, dates[5])).toBe('insufficient_data');
+    // The 3rd consecutive rebuilding candidate (day 7) confirms it.
+    expect(confirmedStateAt(h, [], logs, dates[6])).toBe('rebuilding');
+  });
+
+  it('a short (<=2-miss) lapse still resolves to recovering at both candidate and confirmed level, never rebuilding', () => {
+    const h = habit('2026-01-01');
+    const perfectDays = datesFrom('2026-01-01', 7);
+    const day8 = addDays(perfectDays[6], 1); // missed
+    const day9 = addDays(day8, 1); // recovers it
+    const day10 = addDays(day9, 1);
+    const day11 = addDays(day10, 1);
+    const logs = [...perfectDays.map(log), log(day9), log(day10), log(day11)];
+
+    expect(candidateStateAt(h, [], logs, day9)).toBe('recovering');
+    expect(confirmedStateAt(h, [], logs, day11)).toBe('recovering');
+  });
+
+  it('ordinary early progress with no preceding lapse still confirms building, unaffected by the precedence change', () => {
+    const h = habit('2026-01-01');
+    // 4 completions then a single miss -- no lapse ever reaches the 3-miss rebuilding floor, so
+    // isRebuilding is never even in contention here; building claims it exactly as before the fix.
+    const dates = datesFrom('2026-01-01', 5);
+    const logs = [dates[0], dates[1], dates[2], dates[3]].map(log);
+    expect(confirmedStateAt(h, [], logs, dates[4])).toBe('building');
+  });
+
+  it('steady and thriving histories retain their existing classification', () => {
+    const h = habit('2026-01-01');
+    const sevenDays = datesFrom('2026-01-01', 7);
+    expect(confirmedStateAt(h, [], sevenDays.map(log), sevenDays[6])).toBe('steady');
+    const tenDays = datesFrom('2026-01-01', 10);
+    expect(confirmedStateAt(h, [], tenDays.map(log), tenDays[9])).toBe('thriving');
+  });
+
+  it('a currently-open lapse still confirms quiet, retained from before the fix', () => {
+    const h = habit('2026-01-01');
+    const baseline = datesFrom('2026-01-01', 7);
+    const missDates = datesFrom(addDays(baseline[6], 1), 5); // 5 further, still-open missed days
+    const logs = baseline.map(log);
+    expect(confirmedStateAt(h, [], logs, missDates[4])).toBe('quiet');
+  });
+});

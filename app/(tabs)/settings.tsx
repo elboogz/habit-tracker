@@ -12,12 +12,29 @@ import { getInsight, type InsightKind, regenerateInsight } from '@/lib/ai-coach'
 import { useAuth } from '@/lib/auth-store';
 import { disableCoachPush, enableCoachPush, getCoachPushPrefs } from '@/lib/coach-push';
 import { alertMessage, confirmAction } from '@/lib/confirm';
+import type { ScenarioKey } from '@/lib/domain/dev-simulation';
 import { addDays, challengeProgress, dayKey } from '@/lib/habit-stats';
 import { useHabitStore } from '@/lib/habit-store';
 import { ensureNotificationPermission, notificationsSupported } from '@/lib/notifications';
 import { useCelebration } from '@/lib/use-celebration';
 
 const STREAK_BACKFILL_DAYS = 6;
+
+// Labels/copy for the developer scenario simulator -- the patterns themselves live in
+// lib/domain/dev-simulation.ts (ScenarioKey/scenarioPattern), verified against the real domain
+// functions in lib/domain/dev-simulation.test.ts. "open" scenarios leave today unlogged so the
+// Recovery Card renders and a real tap on Today exercises the live celebration; "preview"
+// scenarios fill in today too, for an instant Progress-screen readout.
+const SCENARIO_META: { key: ScenarioKey; label: string; mode: 'open' | 'preview' }[] = [
+  { key: 'missYesterday', label: 'Miss yesterday', mode: 'open' },
+  { key: 'missTwoConsecutive', label: 'Miss 2 days', mode: 'open' },
+  { key: 'recoverToday', label: 'Recover today', mode: 'preview' },
+  { key: 'recoverAfterMultipleMisses', label: 'Recover after a lapse', mode: 'preview' },
+  { key: 'quietStretch', label: 'Quiet stretch', mode: 'preview' },
+  { key: 'rebuilding', label: 'Rebuilding', mode: 'preview' },
+  { key: 'building', label: 'Building', mode: 'preview' },
+  { key: 'thriving', label: 'Thriving', mode: 'preview' },
+];
 
 export default function SettingsScreen() {
   const colorScheme = useColorScheme();
@@ -30,6 +47,7 @@ export default function SettingsScreen() {
     debugAdvanceChallenge,
     debugCompleteChallenge,
     debugFillHistory,
+    debugSimulateScenario,
     resetOnboarding,
     resetAllData,
   } = useHabitStore();
@@ -37,6 +55,7 @@ export default function SettingsScreen() {
   const { user, signOut } = useAuth();
   const [busy, setBusy] = useState(false);
   const [simulatedIds, setSimulatedIds] = useState<Set<string>>(new Set());
+  const [appliedScenario, setAppliedScenario] = useState<{ habitId: string; scenario: ScenarioKey } | null>(null);
   const { enabled, times } = state.notifications;
 
   const [coachPushEnabled, setCoachPushEnabled] = useState(false);
@@ -217,6 +236,16 @@ export default function SettingsScreen() {
         next.delete(habitId);
         return next;
       });
+    }, 2000);
+  }
+
+  function handleSimulateScenario(habitId: string, scenario: ScenarioKey) {
+    debugSimulateScenario(habitId, scenario);
+    setAppliedScenario({ habitId, scenario });
+    setTimeout(() => {
+      setAppliedScenario((current) =>
+        current?.habitId === habitId && current.scenario === scenario ? null : current,
+      );
     }, 2000);
   }
 
@@ -444,6 +473,48 @@ export default function SettingsScreen() {
                   <ThemedText style={{ color: colors.icon, fontSize: 12, lineHeight: 17 }}>
                     Backfills the last {STREAK_BACKFILL_DAYS} days as done (today is left for you to log), so you can
                     check Progress streaks, best streaks, and the weekly view.
+                  </ThemedText>
+                </ThemedView>
+              )}
+
+              {state.habits.length > 0 && (
+                <ThemedView style={{ gap: 8 }}>
+                  <ThemedText style={{ fontSize: 13, fontWeight: '600' }}>Simulate a scenario</ThemedText>
+                  {state.habits.map((habit) => (
+                    <ThemedView
+                      key={habit.id}
+                      style={[styles.devRow, { borderColor: colors.icon, flexDirection: 'column', alignItems: 'stretch' }]}>
+                      <ThemedText>
+                        {habit.emoji} {habit.name}
+                      </ThemedText>
+                      <ThemedView style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                        {SCENARIO_META.map(({ key, label }) => {
+                          const applied = appliedScenario?.habitId === habit.id && appliedScenario.scenario === key;
+                          return (
+                            <Pressable
+                              key={key}
+                              onPress={() => handleSimulateScenario(habit.id, key)}
+                              style={[
+                                styles.devButton,
+                                { borderColor: colors.tint, paddingHorizontal: 10, paddingVertical: 6 },
+                                applied && { backgroundColor: colors.tint },
+                              ]}>
+                              <ThemedText style={{ color: applied ? colors.background : colors.tint, fontWeight: '600', fontSize: 12 }}>
+                                {applied ? 'Applied ✓' : label}
+                              </ThemedText>
+                            </Pressable>
+                          );
+                        })}
+                      </ThemedView>
+                    </ThemedView>
+                  ))}
+                  <ThemedText style={{ color: colors.icon, fontSize: 12, lineHeight: 17 }}>
+                    Overwrites that habit&apos;s last 7-12 days with a real, valid history (backdating its creation
+                    date the same way the tools above do), so the Recovery Card, Momentum State, and Recovery Rate
+                    all read it exactly as they would genuine usage — nothing is bypassed or faked. &quot;Miss
+                    yesterday&quot; and &quot;Miss 2 days&quot; leave today open so you can log the habit on the
+                    Today tab and see the real Recovery Card and celebration; the rest fill in today too, for an
+                    instant Progress-screen preview of that Momentum State or recovery outcome.
                   </ThemedText>
                 </ThemedView>
               )}

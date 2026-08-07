@@ -5,7 +5,7 @@ import { AppState } from 'react-native';
 
 import { useAuth } from './auth-store';
 import { addDays, challengeProgress, dayKey, reducedTargetFor } from './habit-stats';
-import { backdatedCreatedAt } from './domain/dev-simulation';
+import { backdatedCreatedAt, scenarioPattern, simulatedLogsFor, type ScenarioKey } from './domain/dev-simulation';
 import { scheduleForDate } from './domain/schedule';
 import type {
   Challenge,
@@ -50,6 +50,7 @@ type Action =
   | { type: 'debugAdvanceChallenge'; challengeId: string }
   | { type: 'debugCompleteChallenge'; challengeId: string }
   | { type: 'debugFillHistory'; mode: 'full' | 'alternating' }
+  | { type: 'debugSimulateScenario'; habitId: string; scenario: ScenarioKey }
   | { type: 'resetAllData' }
   | {
       type: 'addLapseReason';
@@ -211,14 +212,12 @@ function reducer(state: HabitState, action: Action): HabitState {
       const filteredLogs = state.logs.filter(
         (log) => !(log.habitId === action.habitId && action.dates.includes(log.date)),
       );
-      const newLogs: HabitLog[] = action.dates.map((date, index) => ({
-        id: `${action.habitId}-debug-${date}-${index}`,
-        habitId: action.habitId,
-        date,
-        count: amount,
-        loggedAt: now,
-        updatedAt: now,
-      }));
+      const newLogs = simulatedLogsFor(
+        action.habitId,
+        action.dates.map((date) => ({ date, completed: true })),
+        amount,
+        now,
+      );
       const habits = state.habits.map((h) =>
         h.id === action.habitId ? withSimulatedHistory(h, action.dates, now) : h,
       );
@@ -243,14 +242,7 @@ function reducer(state: HabitState, action: Action): HabitState {
       for (const habit of challengeHabits) {
         const amount = habit.type === 'count' ? (habit.targetCount ?? 1) : 1;
         logs = logs.filter((log) => !(log.habitId === habit.id && pastDates.includes(log.date)));
-        const newLogs: HabitLog[] = pastDates.map((date, index) => ({
-          id: `${habit.id}-debug-${date}-${index}`,
-          habitId: habit.id,
-          date,
-          count: amount,
-          loggedAt: now,
-          updatedAt: now,
-        }));
+        const newLogs = simulatedLogsFor(habit.id, pastDates.map((date) => ({ date, completed: true })), amount, now);
         logs = [...logs, ...newLogs];
       }
       const habits = state.habits.map((h) =>
@@ -285,14 +277,7 @@ function reducer(state: HabitState, action: Action): HabitState {
       for (const habit of challengeHabits) {
         const amount = habit.type === 'count' ? (habit.targetCount ?? 1) : 1;
         logs = logs.filter((log) => !(log.habitId === habit.id && allDates.includes(log.date)));
-        const newLogs: HabitLog[] = allDates.map((date, index) => ({
-          id: `${habit.id}-debug-${date}-${index}`,
-          habitId: habit.id,
-          date,
-          count: amount,
-          loggedAt: now,
-          updatedAt: now,
-        }));
+        const newLogs = simulatedLogsFor(habit.id, allDates.map((date) => ({ date, completed: true })), amount, now);
         logs = [...logs, ...newLogs];
       }
       const habits = state.habits.map((h) =>
@@ -324,20 +309,29 @@ function reducer(state: HabitState, action: Action): HabitState {
         if (action.mode === 'alternating' && index % 2 !== 0) return;
         simulatedHabitIds.add(habit.id);
         const amount = habit.type === 'count' ? (habit.targetCount ?? 1) : 1;
-        const newLogs: HabitLog[] = dates.map((date) => ({
-          id: `${habit.id}-debug-fill-${date}`,
-          habitId: habit.id,
-          date,
-          count: amount,
-          loggedAt: now,
-          updatedAt: now,
-        }));
+        const newLogs = simulatedLogsFor(habit.id, dates.map((date) => ({ date, completed: true })), amount, now);
         logs = [...logs, ...newLogs];
       });
       const habits = state.habits.map((h) =>
         simulatedHabitIds.has(h.id) ? withSimulatedHistory(h, dates, now) : h,
       );
       return { ...state, habits, logs };
+    }
+    case 'debugSimulateScenario': {
+      const habit = state.habits.find((h) => h.id === action.habitId);
+      if (!habit) return state;
+      const now = new Date().toISOString();
+      const pattern = scenarioPattern(action.scenario, dayKey());
+      const windowDates = pattern.map((day) => day.date);
+      const amount = habit.type === 'count' ? (habit.targetCount ?? 1) : 1;
+      const filteredLogs = state.logs.filter(
+        (log) => !(log.habitId === action.habitId && windowDates.includes(log.date)),
+      );
+      const newLogs = simulatedLogsFor(action.habitId, pattern, amount, now);
+      const habits = state.habits.map((h) =>
+        h.id === action.habitId ? withSimulatedHistory(h, windowDates, now) : h,
+      );
+      return { ...state, habits, logs: [...filteredLogs, ...newLogs] };
     }
     case 'resetAllData':
       return { ...initialState };
@@ -458,6 +452,8 @@ type HabitStore = {
   debugCompleteChallenge: (challengeId: string) => void;
   /** Fills the last 30 days of logs for all habits (full) or every other habit (alternating) — dev tools only. */
   debugFillHistory: (mode: 'full' | 'alternating') => void;
+  /** Overwrites a habit's recent history with a scenario pattern (recovery/momentum testing) — dev tools only. */
+  debugSimulateScenario: (habitId: string, scenario: ScenarioKey) => void;
   /** Wipes all app data back to a fresh install, including onboarding — dev tools only. */
   resetAllData: () => void;
   /** Writes an acknowledged-miss record — Phase 4 recovery card's "Skip for today" and "Reflect". */
@@ -661,6 +657,7 @@ export function HabitStoreProvider({ children }: { children: ReactNode }) {
       debugAdvanceChallenge: (challengeId) => dispatch({ type: 'debugAdvanceChallenge', challengeId }),
       debugCompleteChallenge: (challengeId) => dispatch({ type: 'debugCompleteChallenge', challengeId }),
       debugFillHistory: (mode) => dispatch({ type: 'debugFillHistory', mode }),
+      debugSimulateScenario: (habitId, scenario) => dispatch({ type: 'debugSimulateScenario', habitId, scenario }),
       resetAllData: () => {
         // Local-only preview reset — must not propagate as a mass-delete to the real account.
         skipNextDiffRef.current = true;
