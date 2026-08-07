@@ -5,6 +5,7 @@ import { AppState } from 'react-native';
 
 import { useAuth } from './auth-store';
 import { addDays, challengeProgress, dayKey, reducedTargetFor } from './habit-stats';
+import { backdatedCreatedAt } from './domain/dev-simulation';
 import { scheduleForDate } from './domain/schedule';
 import type {
   Challenge,
@@ -62,6 +63,18 @@ type Action =
   | { type: 'pauseHabit'; habitId: string }
   | { type: 'logReducedCompletion'; habitId: string }
   | { type: 'setLogAmountForDate'; habitId: string; date: string; amount: number };
+
+/**
+ * Backdates `habit.createdAt` (bumping `updatedAt` to `now` alongside it) if needed so every
+ * date in `simulatedDates` is a genuine Scheduled Opportunity for it -- see
+ * lib/domain/dev-simulation.ts for why the debug tools need this. Returns `habit` unchanged if
+ * its existing createdAt already covers the full simulated window.
+ */
+function withSimulatedHistory(habit: Habit, simulatedDates: string[], now: string): Habit {
+  const createdAt = backdatedCreatedAt(habit.createdAt, simulatedDates);
+  if (createdAt === habit.createdAt) return habit;
+  return { ...habit, createdAt, updatedAt: now };
+}
 
 function reducer(state: HabitState, action: Action): HabitState {
   switch (action.type) {
@@ -206,7 +219,10 @@ function reducer(state: HabitState, action: Action): HabitState {
         loggedAt: now,
         updatedAt: now,
       }));
-      return { ...state, logs: [...filteredLogs, ...newLogs] };
+      const habits = state.habits.map((h) =>
+        h.id === action.habitId ? withSimulatedHistory(h, action.dates, now) : h,
+      );
+      return { ...state, habits, logs: [...filteredLogs, ...newLogs] };
     }
     case 'debugAdvanceChallenge': {
       const challenge = state.challenges.find((c) => c.id === action.challengeId);
@@ -223,6 +239,7 @@ function reducer(state: HabitState, action: Action): HabitState {
 
       const now = new Date().toISOString();
       let logs = state.logs;
+      const challengeHabitIds = new Set(challengeHabits.map((h) => h.id));
       for (const habit of challengeHabits) {
         const amount = habit.type === 'count' ? (habit.targetCount ?? 1) : 1;
         logs = logs.filter((log) => !(log.habitId === habit.id && pastDates.includes(log.date)));
@@ -236,9 +253,13 @@ function reducer(state: HabitState, action: Action): HabitState {
         }));
         logs = [...logs, ...newLogs];
       }
+      const habits = state.habits.map((h) =>
+        challengeHabitIds.has(h.id) ? withSimulatedHistory(h, pastDates, now) : h,
+      );
 
       return {
         ...state,
+        habits,
         logs,
         challenges: state.challenges.map((c) =>
           c.id === challenge.id ? { ...c, startDate: newStartDate, updatedAt: now } : c,
@@ -260,6 +281,7 @@ function reducer(state: HabitState, action: Action): HabitState {
 
       const now = new Date().toISOString();
       let logs = state.logs;
+      const challengeHabitIds = new Set(challengeHabits.map((h) => h.id));
       for (const habit of challengeHabits) {
         const amount = habit.type === 'count' ? (habit.targetCount ?? 1) : 1;
         logs = logs.filter((log) => !(log.habitId === habit.id && allDates.includes(log.date)));
@@ -273,9 +295,13 @@ function reducer(state: HabitState, action: Action): HabitState {
         }));
         logs = [...logs, ...newLogs];
       }
+      const habits = state.habits.map((h) =>
+        challengeHabitIds.has(h.id) ? withSimulatedHistory(h, allDates, now) : h,
+      );
 
       return {
         ...state,
+        habits,
         logs,
         challenges: state.challenges.map((c) =>
           c.id === challenge.id ? { ...c, startDate: newStartDate, status: 'completed', updatedAt: now } : c,
@@ -293,8 +319,10 @@ function reducer(state: HabitState, action: Action): HabitState {
       // Clear all logs in the window first so the fill is idempotent and alternating mode
       // correctly leaves odd-indexed habits with zero completions in the window.
       let logs = state.logs.filter((log) => !dateSet.has(log.date));
+      const simulatedHabitIds = new Set<string>();
       state.habits.forEach((habit, index) => {
         if (action.mode === 'alternating' && index % 2 !== 0) return;
+        simulatedHabitIds.add(habit.id);
         const amount = habit.type === 'count' ? (habit.targetCount ?? 1) : 1;
         const newLogs: HabitLog[] = dates.map((date) => ({
           id: `${habit.id}-debug-fill-${date}`,
@@ -306,7 +334,10 @@ function reducer(state: HabitState, action: Action): HabitState {
         }));
         logs = [...logs, ...newLogs];
       });
-      return { ...state, logs };
+      const habits = state.habits.map((h) =>
+        simulatedHabitIds.has(h.id) ? withSimulatedHistory(h, dates, now) : h,
+      );
+      return { ...state, habits, logs };
     }
     case 'resetAllData':
       return { ...initialState };
