@@ -3,12 +3,14 @@ import { Pressable, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CelebrationOverlay } from '@/components/celebration-overlay';
+import { RecoveryCard } from '@/components/recovery-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { isRecoveryEvent } from '@/lib/domain/recovery';
+import { isRecoveryEvent, lapseReasonSuppressionUntil, openLapse } from '@/lib/domain/recovery';
+import { isScheduledOpportunity, nextScheduledOpportunityAfter } from '@/lib/domain/schedule';
 import {
   challengeProgress,
   countForDay,
@@ -18,7 +20,8 @@ import {
   totalCompletions,
 } from '@/lib/habit-stats';
 import { useHabitStore } from '@/lib/habit-store';
-import type { Habit } from '@/lib/habit-types';
+import type { Habit, HabitSchedulePeriod, LapseReasonEntry } from '@/lib/habit-types';
+import { useRecoveryCardDismissals, type RecoveryCardDismissals } from '@/lib/recovery-card-dismissals';
 import { useCelebration } from '@/lib/use-celebration';
 
 const ROUTINE_MESSAGES = ['Nice work! 🎉', "You're on a roll!", 'Keep it up! 💪', 'Consistency wins.'];
@@ -45,15 +48,37 @@ function formatTodayLabel(): string {
   return new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
+/**
+ * The later of the two independently-computed suppression sources (docs/phase-4-plan.md section
+ * 3.4): lapseReasonSuppressionUntil (synced, covers Skip/Reflect) and the local-only dismissal
+ * record (covers Continue today/dismiss). Null means "not suppressed at all", not "suppressed
+ * until the epoch" -- absence from either source is the common case.
+ */
+function recoveryCardSuppressedUntil(
+  habit: Habit,
+  schedulePeriods: HabitSchedulePeriod[],
+  lapseReasons: LapseReasonEntry[],
+  openLapseStart: string,
+  today: string,
+  localDismissals: RecoveryCardDismissals,
+): string | null {
+  const fromLapseReason = lapseReasonSuppressionUntil(habit, schedulePeriods, lapseReasons, openLapseStart, today);
+  const fromLocal = localDismissals[habit.id] ?? null;
+  const candidates = [fromLapseReason, fromLocal].filter((d): d is string => d !== null);
+  if (candidates.length === 0) return null;
+  return candidates.reduce((a, b) => (b > a ? b : a));
+}
+
 export default function TodayScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const { state, logHabit, unlogHabit, setChallengeStatus } = useHabitStore();
+  const { state, logHabit, unlogHabit, setChallengeStatus, addLapseReason } = useHabitStore();
   const { celebration, fire, clear } = useCelebration(state.soundEnabled);
+  const { dismissals, dismiss } = useRecoveryCardDismissals();
 
   const today = dayKey();
-  const { habits, logs, challenges, schedulePeriods } = state;
+  const { habits, logs, challenges, schedulePeriods, lapseReasons } = state;
   const activeChallenges = challenges.filter((challenge) => challenge.status === 'active');
 
   // Challenge-failure detection used to live here as a screen-level effect (only evaluated while
@@ -62,6 +87,37 @@ export default function TodayScreen() {
   // see docs/phase-2-implementation-plan.md section 7.
 
   const completedCount = habits.filter((habit) => isDoneToday(habit, logs)).length;
+
+  // Phase 4 recovery card eligibility (docs/phase-4-plan.md section 3.1): an open, actionable lapse
+  // that today can still do something about, not already suppressed by a prior card action.
+  const eligibleHabits = habits.filter((habit) => {
+    const lapse = openLapse(habit, schedulePeriods, logs, today);
+    if (!lapse) return false;
+    if (!isScheduledOpportunity(schedulePeriods, habit, today)) return false;
+    const suppressedUntil = recoveryCardSuppressedUntil(
+      habit,
+      schedulePeriods,
+      lapseReasons,
+      lapse.firstMissedDate,
+      today,
+      dismissals,
+    );
+    return suppressedUntil === null || today >= suppressedUntil;
+  });
+
+  function handleRecoveryContinue(habit: Habit) {
+    dismiss(habit.id, nextScheduledOpportunityAfter(schedulePeriods, habit, today));
+  }
+
+  function handleRecoverySkip(habit: Habit) {
+    addLapseReason({ habitId: habit.id, missedOpportunityDate: today, reason: null, skipped: true });
+  }
+
+  function handleRecoveryDismissAll() {
+    for (const habit of eligibleHabits) {
+      dismiss(habit.id, nextScheduledOpportunityAfter(schedulePeriods, habit, today));
+    }
+  }
 
   function handleLog(habit: Habit) {
     const wasDoneToday = isDoneToday(habit, logs);
@@ -151,6 +207,13 @@ export default function TodayScreen() {
               <ThemedText style={{ color: colors.icon }}>Add your first habit to get started</ThemedText>
             )}
           </ThemedView>
+
+          <RecoveryCard
+            eligibleHabits={eligibleHabits}
+            onContinue={handleRecoveryContinue}
+            onSkip={handleRecoverySkip}
+            onDismissAll={handleRecoveryDismissAll}
+          />
 
           {activeChallenges.length > 0 && (
             <ThemedView style={{ gap: 8 }}>
