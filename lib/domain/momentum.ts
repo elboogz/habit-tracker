@@ -302,12 +302,22 @@ export function computeConfirmedMomentumState(candidates: MomentumStateKey[]): M
 }
 
 /**
- * The generic hysteresis mechanism, factored out from confirmedStateAt so it can be tested
- * directly against synthetic sequences (e.g. proving flapping between two values never confirms
- * a transition) independent of any particular real habit-history pattern. `values` is the
- * candidate value at each successive evaluation point, in order; `confirmationCount` consecutive
- * agreeing values are required before a transition away from the current confirmed value takes
- * effect.
+ * NOT the production Momentum confirmation implementation. `confirmedStateAt` calls
+ * `computeConfirmedMomentumState` above, not this function -- this is a legacy pending-counter
+ * formulation, retained only as a generic hysteresis primitive for direct synthetic-sequence
+ * testing (e.g. proving flapping between two arbitrary values, unrelated to any `MomentumStateKey`,
+ * never confirms a transition), independent of any particular real habit-history pattern.
+ *
+ * The pending-counter approach (a transition "owns" and consumes `confirmationCount` opportunities
+ * once started) was intentionally rejected as the production mechanism: it delayed every improving
+ * trajectory by approximately one confirmation cycle and broke the locked Phase 2 behavioural
+ * fixtures (`docs/phase-2-implementation-plan.md` §8) -- see `computeConfirmedMomentumState`'s doc
+ * comment above for the full account. Any future behavioural change to Momentum confirmation must
+ * be made to `computeConfirmedMomentumState`, never to this helper.
+ *
+ * `values` is the candidate value at each successive evaluation point, in order; `confirmationCount`
+ * consecutive agreeing values are required before a transition away from the current confirmed
+ * value takes effect.
  */
 export function computeConfirmedState<T>(values: T[], initial: T, confirmationCount: number): T {
   let confirmed = initial;

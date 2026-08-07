@@ -253,3 +253,26 @@ describe('rebuilding evaluation precedence (post-completion fix)', () => {
     expect(confirmedStateAt(h, [], logs, missDates[4])).toBe('quiet');
   });
 });
+
+describe('regression: original manually-reproduced monotonicity violation (day 5 open vs. completed)', () => {
+  it('habit created day 1, completed days 1-4: completing day 5 too must not lower the confirmed state below leaving it open', () => {
+    const h = habit('2026-01-01');
+    const [day1, day2, day3, day4, day5] = datesFrom('2026-01-01', 5);
+    const completedThroughDay4 = [day1, day2, day3, day4].map(log);
+    const completedThroughDay5 = [...completedThroughDay4, log(day5)];
+
+    // Expected, day 5 left open: days 1-4 clear insufficient_data's 3-opportunity floor, and the
+    // trailing 3 opportunities (days 2-4) are a 100% window -- candidate and confirmed both read
+    // 'building' (matches the "ordinary early progress" case above, same data).
+    expect(confirmedStateAt(h, [], completedThroughDay4, day5)).toBe('building');
+
+    // Expected, day 5 also completed: per the monotonicity contract, completing today must never
+    // make the confirmed badge read *worse* than leaving it open, so this must also read 'building'.
+    // Before the Rule 2 fix in computeConfirmedMomentumState, this was the manually-reproduced bug --
+    // it read 'insufficient_data' instead, because the plain pending-counter mechanism discarded
+    // the 'building' candidate's already-accumulated run the moment 'steady' appeared as the new
+    // (stronger) candidate. See docs/phase-4-completion-report.md's "Momentum confirmation
+    // mechanism" section and computeConfirmedMomentumState's doc comment above.
+    expect(confirmedStateAt(h, [], completedThroughDay5, day5)).toBe('building');
+  });
+});
