@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Switch, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ReminderTimesEditor } from '@/components/reminder-times-editor';
@@ -10,25 +10,29 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { alertMessage, confirmAction } from '@/lib/confirm';
-import { reducedTargetFor } from '@/lib/habit-stats';
+import { scheduleForDate } from '@/lib/domain/schedule';
+import { dayKey, reducedTargetFor } from '@/lib/habit-stats';
 import { useHabitStore } from '@/lib/habit-store';
-import { EMOJI_CHOICES, type Habit, type HabitType } from '@/lib/habit-types';
+import { EMOJI_CHOICES, type Habit, type HabitType, type ScheduleDays } from '@/lib/habit-types';
 
 const EMOJI_COLUMNS = 5;
 const EMOJI_GAP = 8;
+const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 export default function HabitFormScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const { state, addHabit, updateHabit, deleteHabit } = useHabitStore();
+  const { state, addHabit, updateHabit, deleteHabit, addSchedulePeriod } = useHabitStore();
 
   const editingHabit = id ? state.habits.find((habit) => habit.id === id) : undefined;
   const isEditing = !!editingHabit;
   const hasActiveChallenge = state.challenges.some(
     (c) => c.status === 'active' && c.habitIds.includes(id ?? ''),
   );
+
+  const currentSchedule = scheduleForDate(state.schedulePeriods, editingHabit?.id ?? '', dayKey());
 
   const [name, setName] = useState(editingHabit?.name ?? '');
   const [emoji, setEmoji] = useState(editingHabit?.emoji ?? EMOJI_CHOICES[0]);
@@ -40,6 +44,10 @@ export default function HabitFormScreen() {
       1,
   );
   const [reminderTimes, setReminderTimes] = useState<string[]>(editingHabit?.reminderTimes ?? []);
+  const [selectedDays, setSelectedDays] = useState<number[]>(
+    currentSchedule.days === 'daily' ? [0, 1, 2, 3, 4, 5, 6] : currentSchedule.days,
+  );
+  const [paused, setPaused] = useState(currentSchedule.paused);
   const [emojiRowWidth, setEmojiRowWidth] = useState(0);
 
   function handleTargetCountChange(next: number) {
@@ -48,6 +56,18 @@ export default function HabitFormScreen() {
     // A "smaller version" must stay strictly below the full target (docs/phase-4-plan.md
     // section 10's edge case) -- clamp it down if the full target just shrank past it.
     setReducedTarget((current) => Math.min(current, clamped - 1));
+  }
+
+  function toggleScheduleDay(weekday: number) {
+    setSelectedDays((current) => {
+      if (current.includes(weekday)) {
+        // Keep at least one day selected -- a habit with none would never have a Scheduled
+        // Opportunity again, an unrecoverable dead end this UI shouldn't allow reaching.
+        if (current.length === 1) return current;
+        return current.filter((day) => day !== weekday);
+      }
+      return [...current, weekday].sort((a, b) => a - b);
+    });
   }
 
   const emojiSize =
@@ -70,6 +90,15 @@ export default function HabitFormScreen() {
         reducedTarget: type === 'count' ? reducedTarget : undefined,
         reminderTimes: reminderTimes.length > 0 ? reminderTimes : undefined,
       });
+
+      // Append-only: only write a new period if the selection actually differs from the one
+      // currently in effect (docs/phase-4-plan.md section 6.3) -- avoids an empty history of
+      // no-op periods every time the form is saved for an unrelated reason like renaming.
+      const nextDays: ScheduleDays = selectedDays.length === 7 ? 'daily' : selectedDays;
+      const daysChanged = JSON.stringify(currentSchedule.days) !== JSON.stringify(nextDays);
+      if (daysChanged || paused !== currentSchedule.paused) {
+        addSchedulePeriod(editingHabit.id, nextDays, paused);
+      }
     } else {
       addHabit({ name: trimmed, emoji, type, targetCount, reducedTarget, reminderTimes });
     }
@@ -211,6 +240,48 @@ export default function HabitFormScreen() {
             <ReminderTimesEditor times={reminderTimes} onChange={setReminderTimes} />
           </ThemedView>
 
+          {isEditing && editingHabit && (
+            <ThemedView style={styles.section}>
+              <ThemedText type="defaultSemiBold">Schedule</ThemedText>
+              <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
+                Which days count as a Scheduled Opportunity for this habit, and whether it’s paused.
+              </ThemedText>
+              <ThemedView style={styles.weekdayRow}>
+                {WEEKDAY_LABELS.map((label, index) => {
+                  const selected = selectedDays.includes(index);
+                  return (
+                    <Pressable
+                      key={index}
+                      onPress={() => toggleScheduleDay(index)}
+                      style={[
+                        styles.weekdayChip,
+                        { borderColor: colors.icon },
+                        selected && { backgroundColor: colors.tint, borderColor: colors.tint },
+                      ]}>
+                      <ThemedText style={{ color: selected ? colors.background : colors.text, fontWeight: '600', fontSize: 13 }}>
+                        {label}
+                      </ThemedText>
+                    </Pressable>
+                  );
+                })}
+              </ThemedView>
+              <ThemedView style={styles.pauseRow}>
+                <ThemedText>Paused</ThemedText>
+                <Switch
+                  value={paused}
+                  onValueChange={setPaused}
+                  trackColor={{ false: colors.icon, true: colors.tint }}
+                  thumbColor="#fff"
+                />
+              </ThemedView>
+              {hasActiveChallenge && (
+                <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
+                  This habit has an active challenge — schedule changes apply from today onward and never rewrite past days.
+                </ThemedText>
+              )}
+            </ThemedView>
+          )}
+
           {isEditing && hasActiveChallenge && (
             <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
               This habit has an active challenge — finish or let it run its course before editing its type.
@@ -292,6 +363,23 @@ const styles = StyleSheet.create({
   stepperValue: {
     minWidth: 110,
     textAlign: 'center',
+  },
+  weekdayRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  weekdayChip: {
+    flex: 1,
+    aspectRatio: 1,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pauseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   saveButton: {
     paddingVertical: 16,

@@ -143,6 +143,10 @@ export default function TodayScreen() {
     fire(habit.emoji, 'A smaller version still counts.');
   }
 
+  function handleRecoveryAdjustSchedule(habit: Habit) {
+    router.push({ pathname: '/habit-form', params: { id: habit.id } });
+  }
+
   function handleRecoveryPause(habit: Habit) {
     // Appends a new paused period effective today -- no confirmation, pausing is trivially
     // reversible (docs/phase-4-plan.md section 3.5). This alone removes the habit from
@@ -252,6 +256,7 @@ export default function TodayScreen() {
             onSmallerVersion={handleRecoverySmallerVersion}
             onSkip={handleRecoverySkip}
             onPause={handleRecoveryPause}
+            onAdjustSchedule={handleRecoveryAdjustSchedule}
             onDismissAll={handleRecoveryDismissAll}
           />
 

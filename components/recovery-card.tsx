@@ -23,6 +23,7 @@ export function RecoveryCard({
   onSmallerVersion,
   onSkip,
   onPause,
+  onAdjustSchedule,
   onDismissAll,
 }: {
   eligibleHabits: Habit[];
@@ -30,6 +31,7 @@ export function RecoveryCard({
   onSmallerVersion: (habit: Habit) => void;
   onSkip: (habit: Habit) => void;
   onPause: (habit: Habit) => void;
+  onAdjustSchedule: (habit: Habit) => void;
   onDismissAll: () => void;
 }) {
   const colorScheme = useColorScheme();
@@ -133,9 +135,18 @@ export function RecoveryCard({
                     <ThemedText>Pause this habit</ThemedText>
                   </Pressable>
 
-                  <ThemedView style={[styles.optionButton, styles.stubButton, { borderColor: colors.icon + '55' }]}>
-                    <ThemedText style={{ color: colors.icon }}>Adjust the schedule (coming soon)</ThemedText>
-                  </ThemedView>
+                  <Pressable
+                    onPress={() => {
+                      onAdjustSchedule(habit);
+                      setOpenHabitId(null);
+                    }}
+                    style={({ pressed }) => [
+                      styles.optionButton,
+                      { borderColor: colors.icon },
+                      pressed && { opacity: 0.7 },
+                    ]}>
+                    <ThemedText>Adjust the schedule</ThemedText>
+                  </Pressable>
 
                   <ThemedView style={[styles.optionButton, styles.stubButton, { borderColor: colors.icon + '55' }]}>
                     <ThemedText style={{ color: colors.icon }}>Reflect (coming soon)</ThemedText>
