@@ -107,3 +107,28 @@ No other deviations. The commit order, all six approved product decisions (§8.1
 ## Confirmation
 
 Working tree is clean as of this commit (verified before pushing). All Phase 4 commits are pushed to `origin/main`. An annotated tag `phase-4-complete` is created at this documentation commit and pushed to the remote.
+
+## Post-completion manual testing fix
+
+**Observed inconsistency.** During manual on-device testing after `phase-4-complete`, the Progress screen for a habit backfilled via the Settings developer tools (e.g. "Fill all") simultaneously showed substantial history (31 Total Completions, 12 of the last 14 days completed) and Momentum State "Getting started" / `insufficient_data` copy ("Still gathering enough days to show a pattern.") — an internally contradictory result for the same habit at the same moment.
+
+**Root cause.** `lib/domain/schedule.ts`'s `scheduledOpportunitiesUpTo` (the foundation every Momentum and Recovery calculation is built on) never generates a Scheduled Opportunity before `localDayKeyOf(habit.createdAt)` — this floor is the correct, locked Phase 2 rule and was not changed. The developer simulation reducer cases in `lib/habit-store.tsx` (`debugBackfillLogs`, `debugAdvanceChallenge`, `debugCompleteChallenge`, `debugFillHistory`) backdated `HabitLog.date` into the past to simulate history, but never touched the habit's own `createdAt`, which stayed at its real value (the moment the habit was actually created via the app, typically "today" for a habit created solely to test these tools). As a result:
+- `totalCompletions` and `consistency` (`lib/domain/habit-stats.ts`) read raw logs by calendar date and are unaffected by `createdAt` — they correctly reflected the full backfilled window.
+- `candidateStateAt`/`confirmedStateAt` (`lib/domain/momentum.ts`) and the recovery functions in `lib/domain/recovery.ts` all derive their opportunity list from `scheduledOpportunitiesUpTo`, which only walked forward from "today" (the real `createdAt`) — so they saw exactly one Scheduled Opportunity and correctly, per the locked rules, reported `insufficient_data`.
+
+Both readings were individually correct given their inputs; the inputs themselves (a backfilled log history paired with an unbackdated creation date) did not represent a coherent simulated habit. Progress was not caching or reading stale state, and no domain rule (Momentum thresholds, hysteresis, `insufficient_data`'s definition, Recovery Rate/Event semantics) was defective.
+
+**Fix.** Added `lib/domain/dev-simulation.ts`'s `backdatedCreatedAt(createdAt, simulatedDates)` — a pure, dev-tool-only helper that computes the `createdAt` needed so every simulated date is a genuine Scheduled Opportunity (backdating to local midnight of the earliest simulated date, preserving the original time-of-day; a no-op if `createdAt` already covers the window; never moves `createdAt` *later*, so a habit whose real creation date already predates the simulated dates — e.g. "Simulate streak" on a month-old habit — is left untouched). Wired it into all four `lib/habit-store.tsx` debug reducer cases via a small `withSimulatedHistory` wrapper that also bumps `updatedAt` to `now` when `createdAt` actually changes, applied only to the specific habit(s) each action is already backfilling — no other habit's data is touched.
+
+**Tests added** (`lib/domain/dev-simulation.test.ts`, 13 cases):
+- `backdatedCreatedAt` unit behavior: no-op when already covered, backdates to the earliest date while preserving time-of-day, never moves `createdAt` later.
+- A simulated 30-day habit history with 12-of-14 recent completions no longer reads `insufficient_data`, and matches a manually constructed genuine-history fixture's `candidateStateAt`/`confirmedStateAt`/`consistency`/`totalCompletions` output exactly (also reproduces the original bug against the un-fixed `createdAt` first, to prove the test actually exercises the failure).
+- A sparse/new simulated habit (1 backfilled day) correctly remains `insufficient_data` — the fix doesn't weaken the threshold.
+- A simulated recovery/lapse history produces identical `recoveryEvents`, `closedLapses`, and `recoveryRate` to an equivalent manually constructed genuine fixture.
+- Simulated history still respects the habit creation-date floor (no opportunity generated before the backdated `createdAt`).
+- A pause period inside the simulated window is still excluded correctly after backdating.
+- Backdating never produces a Scheduled Opportunity after the real "today", and a simulated date later than `createdAt` can never push it forward.
+
+Full suite: `npm test` — 9 suites, 137 tests, all passing (13 new). `npx tsc --noEmit` — clean. `npm run lint` — clean.
+
+**Production impact: none.** The fix is confined to `lib/domain/dev-simulation.ts` (new file, not part of the generated Edge Function whitelist in `scripts/build-edge-functions.js`) and the four `debug*` reducer cases in `lib/habit-store.tsx`, which are reachable only from Settings' `__DEV__`-only developer tools section. No Momentum, Recovery, schedule, or consistency rule changed; no schema change; no Edge Function regeneration required (neither `day-key.ts` nor `habit-stats.ts` — the only two files the generator inlines — were touched). A real user's own habit history, created and logged entirely through normal app use, is completely unaffected.
