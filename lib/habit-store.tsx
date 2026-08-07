@@ -4,8 +4,19 @@ import { createContext, useContext, useEffect, useMemo, useReducer, useRef, useS
 import { AppState } from 'react-native';
 
 import { useAuth } from './auth-store';
-import { addDays, challengeProgress, dayKey } from './habit-stats';
-import type { Challenge, Habit, HabitLog, HabitState, HabitType } from './habit-types';
+import { addDays, challengeProgress, dayKey, reducedTargetFor } from './habit-stats';
+import { scheduleForDate } from './domain/schedule';
+import type {
+  Challenge,
+  Habit,
+  HabitLog,
+  HabitSchedulePeriod,
+  HabitState,
+  HabitType,
+  LapseReasonEntry,
+  LapseReasonKey,
+  ScheduleDays,
+} from './habit-types';
 import { scheduleAllReminders } from './notifications';
 import { diffAndSync, enqueueFullUpload, pullRemoteChanges, pushPendingChanges, type RemoteChanges } from './supabase-sync';
 import {
@@ -38,7 +49,19 @@ type Action =
   | { type: 'debugAdvanceChallenge'; challengeId: string }
   | { type: 'debugCompleteChallenge'; challengeId: string }
   | { type: 'debugFillHistory'; mode: 'full' | 'alternating' }
-  | { type: 'resetAllData' };
+  | { type: 'resetAllData' }
+  | {
+      type: 'addLapseReason';
+      habitId: string;
+      missedOpportunityDate: string;
+      reason: LapseReasonKey | null;
+      note?: string;
+      skipped: boolean;
+    }
+  | { type: 'addSchedulePeriod'; habitId: string; days: ScheduleDays; paused: boolean }
+  | { type: 'pauseHabit'; habitId: string }
+  | { type: 'logReducedCompletion'; habitId: string }
+  | { type: 'setLogAmountForDate'; habitId: string; date: string; amount: number };
 
 function reducer(state: HabitState, action: Action): HabitState {
   switch (action.type) {
@@ -76,7 +99,16 @@ function reducer(state: HabitState, action: Action): HabitState {
         else if (period.updatedAt >= schedulePeriods[index].updatedAt) schedulePeriods[index] = period;
       }
 
-      return { ...state, habits, logs, challenges, schedulePeriods, ...(changes.settings ?? {}) };
+      // Lapse reasons are append-only from the client's perspective (docs/phase-4-plan.md
+      // section 4.3), same add-or-accept-newer-by-id merge as schedule periods above.
+      const lapseReasons = [...state.lapseReasons];
+      for (const entry of changes.lapseReasons) {
+        const index = lapseReasons.findIndex((existing) => existing.id === entry.id);
+        if (index === -1) lapseReasons.push(entry);
+        else if (entry.updatedAt >= lapseReasons[index].updatedAt) lapseReasons[index] = entry;
+      }
+
+      return { ...state, habits, logs, challenges, schedulePeriods, lapseReasons, ...(changes.settings ?? {}) };
     }
     case 'addHabit':
       return { ...state, habits: [...state.habits, action.habit] };
@@ -278,6 +310,86 @@ function reducer(state: HabitState, action: Action): HabitState {
     }
     case 'resetAllData':
       return { ...initialState };
+    case 'addLapseReason': {
+      const now = new Date().toISOString();
+      const entry: LapseReasonEntry = {
+        id: Crypto.randomUUID(),
+        habitId: action.habitId,
+        missedOpportunityDate: action.missedOpportunityDate,
+        reason: action.reason,
+        note: action.note,
+        skipped: action.skipped,
+        createdAt: now,
+        updatedAt: now,
+      };
+      return { ...state, lapseReasons: [...state.lapseReasons, entry] };
+    }
+    case 'addSchedulePeriod': {
+      const now = new Date().toISOString();
+      const period: HabitSchedulePeriod = {
+        id: Crypto.randomUUID(),
+        habitId: action.habitId,
+        effectiveFrom: dayKey(),
+        days: action.days,
+        paused: action.paused,
+        createdAt: now,
+        updatedAt: now,
+      };
+      return { ...state, schedulePeriods: [...state.schedulePeriods, period] };
+    }
+    case 'pauseHabit': {
+      // Thin wrapper over the same append-only period write addSchedulePeriod does — carries
+      // over the habit's currently active days rather than requiring the caller to know them,
+      // so "Pause this habit" stays a genuine one-tap action from the recovery card.
+      const current = scheduleForDate(state.schedulePeriods, action.habitId, dayKey());
+      const now = new Date().toISOString();
+      const period: HabitSchedulePeriod = {
+        id: Crypto.randomUUID(),
+        habitId: action.habitId,
+        effectiveFrom: dayKey(),
+        days: current.days,
+        paused: true,
+        createdAt: now,
+        updatedAt: now,
+      };
+      return { ...state, schedulePeriods: [...state.schedulePeriods, period] };
+    }
+    case 'logReducedCompletion': {
+      const habit = state.habits.find((h) => h.id === action.habitId);
+      if (!habit) return state;
+      const target = reducedTargetFor(habit);
+      if (target === null) return state;
+      const now = new Date().toISOString();
+      const log: HabitLog = {
+        id: Crypto.randomUUID(),
+        habitId: action.habitId,
+        date: dayKey(),
+        count: target,
+        reduced: true,
+        loggedAt: now,
+        updatedAt: now,
+      };
+      return { ...state, logs: [...state.logs, log] };
+    }
+    case 'setLogAmountForDate': {
+      // Removes every existing log row for (habitId, date), then — if amount > 0 — inserts
+      // exactly one new row. Handles both directions (adding a missing completion, correcting or
+      // removing an existing one) with a single primitive; never sets reduced (docs/phase-4-plan.md
+      // section 7.3 — retroactive editing corrects a count, it does not retroactively invent a
+      // "smaller version" designation).
+      const remaining = state.logs.filter((log) => !(log.habitId === action.habitId && log.date === action.date));
+      if (action.amount <= 0) return { ...state, logs: remaining };
+      const now = new Date().toISOString();
+      const newLog: HabitLog = {
+        id: Crypto.randomUUID(),
+        habitId: action.habitId,
+        date: action.date,
+        count: action.amount,
+        loggedAt: now,
+        updatedAt: now,
+      };
+      return { ...state, logs: [...remaining, newLog] };
+    }
     default:
       return state;
   }
@@ -316,6 +428,22 @@ type HabitStore = {
   debugFillHistory: (mode: 'full' | 'alternating') => void;
   /** Wipes all app data back to a fresh install, including onboarding — dev tools only. */
   resetAllData: () => void;
+  /** Writes an acknowledged-miss record — Phase 4 recovery card's "Skip for today" and "Reflect". */
+  addLapseReason: (input: {
+    habitId: string;
+    missedOpportunityDate: string;
+    reason: LapseReasonKey | null;
+    note?: string;
+    skipped: boolean;
+  }) => void;
+  /** Appends a new effective-dated schedule/pause period, never editing a prior one — Phase 4 schedule editor. */
+  addSchedulePeriod: (habitId: string, days: ScheduleDays, paused: boolean) => void;
+  /** One-tap pause, carrying over the habit's currently active days — Phase 4 recovery card. */
+  pauseHabit: (habitId: string) => void;
+  /** Logs today's completion at the habit's reduced ("smaller version") target — Phase 4 recovery card. No-ops if the habit has no measurable target. */
+  logReducedCompletion: (habitId: string) => void;
+  /** Sets (or, with amount 0, clears) a specific day's total logged count — Phase 4 retroactive entry, last 7 days only (enforced by the caller). */
+  setLogAmountForDate: (habitId: string, date: string, amount: number) => void;
 };
 
 const HabitStoreContext = createContext<HabitStore | null>(null);
@@ -505,6 +633,11 @@ export function HabitStoreProvider({ children }: { children: ReactNode }) {
         skipNextDiffRef.current = true;
         dispatch({ type: 'resetAllData' });
       },
+      addLapseReason: (input) => dispatch({ type: 'addLapseReason', ...input }),
+      addSchedulePeriod: (habitId, days, paused) => dispatch({ type: 'addSchedulePeriod', habitId, days, paused }),
+      pauseHabit: (habitId) => dispatch({ type: 'pauseHabit', habitId }),
+      logReducedCompletion: (habitId) => dispatch({ type: 'logReducedCompletion', habitId }),
+      setLogAmountForDate: (habitId, date, amount) => dispatch({ type: 'setLogAmountForDate', habitId, date, amount }),
     }),
     [state, hydrated],
   );

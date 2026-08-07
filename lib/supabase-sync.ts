@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import type { Challenge, Habit, HabitLog, HabitSchedulePeriod, HabitState } from './habit-types';
+import type { Challenge, Habit, HabitLog, HabitSchedulePeriod, HabitState, LapseReasonEntry, LapseReasonKey } from './habit-types';
 import { dequeue, enqueue, peekAll } from './sync-queue';
 import { supabase } from './supabase';
 
@@ -13,6 +13,7 @@ type HabitRow = {
   emoji: string;
   type: string;
   target_count: number | null;
+  reduced_target: number | null;
   reminder_times: string[] | null;
   created_at: string;
   updated_at: string;
@@ -24,6 +25,7 @@ type HabitLogRow = {
   habit_id: string;
   date: string;
   count: number;
+  reduced: boolean;
   logged_at: string;
   updated_at: string;
 };
@@ -56,6 +58,17 @@ type HabitSchedulePeriodRow = {
   updated_at: string;
 };
 
+type LapseReasonRow = {
+  id: string;
+  habit_id: string;
+  missed_opportunity_date: string;
+  reason: string | null;
+  note: string | null;
+  skipped: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 function habitToRow(habit: Habit, userId: string, deleted = false): Record<string, unknown> {
   // A soft-delete must bump updated_at to "now" (not reuse the stale value) — otherwise
   // another device's watermark-based pull could already be past it and miss the tombstone.
@@ -67,6 +80,7 @@ function habitToRow(habit: Habit, userId: string, deleted = false): Record<strin
     emoji: habit.emoji,
     type: habit.type,
     target_count: habit.targetCount ?? null,
+    reduced_target: habit.reducedTarget ?? null,
     reminder_times: habit.reminderTimes ?? null,
     created_at: habit.createdAt,
     updated_at: updatedAt,
@@ -81,6 +95,7 @@ function rowToHabit(row: HabitRow): Habit {
     emoji: row.emoji,
     type: row.type as Habit['type'],
     targetCount: row.target_count ?? undefined,
+    reducedTarget: row.reduced_target ?? undefined,
     reminderTimes: row.reminder_times ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -94,6 +109,7 @@ function logToRow(log: HabitLog, userId: string): Record<string, unknown> {
     habit_id: log.habitId,
     date: log.date,
     count: log.count,
+    reduced: log.reduced ?? false,
     logged_at: log.loggedAt,
     updated_at: log.updatedAt,
   };
@@ -105,6 +121,7 @@ function rowToLog(row: HabitLogRow): HabitLog {
     habitId: row.habit_id,
     date: row.date,
     count: row.count,
+    reduced: row.reduced,
     loggedAt: row.logged_at,
     updatedAt: row.updated_at,
   };
@@ -160,6 +177,33 @@ function rowToPeriod(row: HabitSchedulePeriodRow): HabitSchedulePeriod {
   };
 }
 
+function lapseReasonToRow(entry: LapseReasonEntry, userId: string): Record<string, unknown> {
+  return {
+    id: entry.id,
+    user_id: userId,
+    habit_id: entry.habitId,
+    missed_opportunity_date: entry.missedOpportunityDate,
+    reason: entry.reason,
+    note: entry.note ?? null,
+    skipped: entry.skipped,
+    created_at: entry.createdAt,
+    updated_at: entry.updatedAt,
+  };
+}
+
+function rowToLapseReason(row: LapseReasonRow): LapseReasonEntry {
+  return {
+    id: row.id,
+    habitId: row.habit_id,
+    missedOpportunityDate: row.missed_opportunity_date,
+    reason: row.reason as LapseReasonKey | null,
+    note: row.note ?? undefined,
+    skipped: row.skipped,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function settingsToRow(state: HabitState, userId: string): Record<string, unknown> {
   return {
     user_id: userId,
@@ -203,6 +247,7 @@ export type RemoteChanges = {
   challenges: Challenge[];
   deletedChallengeIds: string[];
   schedulePeriods: HabitSchedulePeriod[];
+  lapseReasons: LapseReasonEntry[];
   settings: Partial<HabitState> | null;
 };
 
@@ -210,15 +255,23 @@ export type RemoteChanges = {
 export async function pullRemoteChanges(userId: string): Promise<RemoteChanges | null> {
   const since = await getWatermark(userId);
 
-  const [habitsRes, logsRes, challengesRes, schedulePeriodsRes, settingsRes] = await Promise.all([
+  const [habitsRes, logsRes, challengesRes, schedulePeriodsRes, lapseReasonsRes, settingsRes] = await Promise.all([
     supabase.from('habits').select('*').eq('user_id', userId).gt('updated_at', since),
     supabase.from('habit_logs').select('*').eq('user_id', userId).gt('updated_at', since),
     supabase.from('challenges').select('*').eq('user_id', userId).gt('updated_at', since),
     supabase.from('habit_schedule_periods').select('*').eq('user_id', userId).gt('updated_at', since),
+    supabase.from('lapse_reasons').select('*').eq('user_id', userId).gt('updated_at', since),
     supabase.from('user_settings').select('*').eq('user_id', userId).gt('updated_at', since).maybeSingle(),
   ]);
 
-  if (habitsRes.error || logsRes.error || challengesRes.error || schedulePeriodsRes.error || settingsRes.error) {
+  if (
+    habitsRes.error ||
+    logsRes.error ||
+    challengesRes.error ||
+    schedulePeriodsRes.error ||
+    lapseReasonsRes.error ||
+    settingsRes.error
+  ) {
     return null;
   }
 
@@ -255,6 +308,13 @@ export async function pullRemoteChanges(userId: string): Promise<RemoteChanges |
     return rowToPeriod(row);
   });
 
+  // Also append-only from the client's perspective (docs/phase-4-plan.md section 4.3) -- no
+  // delete/tombstone case, same as schedule periods above.
+  const lapseReasons = ((lapseReasonsRes.data ?? []) as LapseReasonRow[]).map((row) => {
+    bump(row.updated_at);
+    return rowToLapseReason(row);
+  });
+
   let settings: Partial<HabitState> | null = null;
   if (settingsRes.data) {
     const row = settingsRes.data as SettingsRow;
@@ -268,10 +328,10 @@ export async function pullRemoteChanges(userId: string): Promise<RemoteChanges |
 
   if (latest !== since) await setWatermark(userId, latest);
 
-  return { habits, deletedHabitIds, logs, challenges, deletedChallengeIds, schedulePeriods, settings };
+  return { habits, deletedHabitIds, logs, challenges, deletedChallengeIds, schedulePeriods, lapseReasons, settings };
 }
 
-/** Enqueues every habit/log/challenge/schedule period/setting in `state` for upload — used once, the first time pre-existing local (pre-auth) data is adopted into a freshly signed-up account. */
+/** Enqueues every habit/log/challenge/schedule period/lapse reason/setting in `state` for upload — used once, the first time pre-existing local (pre-auth) data is adopted into a freshly signed-up account. */
 export async function enqueueFullUpload(state: HabitState, userId: string): Promise<void> {
   for (const habit of state.habits) {
     await enqueue('habits', 'upsert', habitToRow(habit, userId));
@@ -284,6 +344,9 @@ export async function enqueueFullUpload(state: HabitState, userId: string): Prom
   }
   for (const period of state.schedulePeriods) {
     await enqueue('habit_schedule_periods', 'upsert', periodToRow(period, userId));
+  }
+  for (const entry of state.lapseReasons) {
+    await enqueue('lapse_reasons', 'upsert', lapseReasonToRow(entry, userId));
   }
   await enqueue('user_settings', 'upsert', settingsToRow(state, userId));
 }
@@ -331,6 +394,16 @@ export async function diffAndSync(prev: HabitState, next: HabitState, userId: st
       await enqueue('habit_schedule_periods', 'upsert', periodToRow(period, userId));
     }
     prevPeriods.delete(period.id);
+  }
+
+  // No delete branch: lapse reasons are append-only from the client's perspective
+  // (docs/phase-4-plan.md section 4.3), same as schedule periods above.
+  const prevLapseReasons = new Map(prev.lapseReasons.map((entry) => [entry.id, entry]));
+  for (const entry of next.lapseReasons) {
+    if (prevLapseReasons.get(entry.id) !== entry) {
+      await enqueue('lapse_reasons', 'upsert', lapseReasonToRow(entry, userId));
+    }
+    prevLapseReasons.delete(entry.id);
   }
 
   if (
