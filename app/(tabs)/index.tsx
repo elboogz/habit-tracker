@@ -84,7 +84,8 @@ export default function TodayScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const { state, logHabit, unlogHabit, setChallengeStatus, addLapseReason, logReducedCompletion } = useHabitStore();
+  const { state, logHabit, unlogHabit, setChallengeStatus, addLapseReason, logReducedCompletion, pauseHabit } =
+    useHabitStore();
   const { celebration, fire, clear } = useCelebration(state.soundEnabled);
   const { dismissals, dismiss } = useRecoveryCardDismissals();
 
@@ -140,6 +141,14 @@ export default function TodayScreen() {
       return;
     }
     fire(habit.emoji, 'A smaller version still counts.');
+  }
+
+  function handleRecoveryPause(habit: Habit) {
+    // Appends a new paused period effective today -- no confirmation, pausing is trivially
+    // reversible (docs/phase-4-plan.md section 3.5). This alone removes the habit from
+    // eligibleHabits on the next render, since today stops being a Scheduled Opportunity; no
+    // separate local dismissal is needed.
+    pauseHabit(habit.id);
   }
 
   function handleRecoveryDismissAll() {
@@ -242,6 +251,7 @@ export default function TodayScreen() {
             onContinue={handleRecoveryContinue}
             onSmallerVersion={handleRecoverySmallerVersion}
             onSkip={handleRecoverySkip}
+            onPause={handleRecoveryPause}
             onDismissAll={handleRecoveryDismissAll}
           />
 
