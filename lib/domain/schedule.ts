@@ -83,3 +83,24 @@ export function scheduledOpportunitiesUpTo(
   }
   return result;
 }
+
+/** Number of days (today plus the days before it) the production retroactive-entry correction panel covers. */
+export const RETROACTIVE_ENTRY_WINDOW_DAYS = 7;
+
+/**
+ * The earliest date the production retroactive-entry correction panel (components/habit-calendar.tsx's
+ * `onDayPress`, wired up in app/habit/[id].tsx) may edit for `habit`, as of `today` -- the
+ * intersection of the fixed `RETROACTIVE_ENTRY_WINDOW_DAYS`-day window and the habit's own creation
+ * day. Retroactive entry is a correction tool for a habit's own recent history, not a pre-creation
+ * import mechanism (docs/phase-4-plan.md section 7 only ever describes adding/correcting/removing a
+ * day's completion within the fixed window, never backfilling history from before a habit existed
+ * in the app) -- so a habit created 2 days ago can only have yesterday and the day before corrected,
+ * never further back, even though the window alone would otherwise reach further. Developer
+ * simulation is unaffected: it deliberately backdates `createdAt` itself
+ * (dev-simulation.ts's backdatedCreatedAt) rather than going through this gate.
+ */
+export function retroactiveEntryWindowStart(habit: Habit, today: string): string {
+  const windowStart = addDays(today, -(RETROACTIVE_ENTRY_WINDOW_DAYS - 1));
+  const creationFloor = localDayKeyOf(habit.createdAt);
+  return windowStart > creationFloor ? windowStart : creationFloor;
+}

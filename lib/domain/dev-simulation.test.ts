@@ -14,7 +14,7 @@ import { backdatedCreatedAt, scenarioPattern, simulatedLogsFor, type ScenarioKey
 import { consistency, totalCompletions } from './habit-stats';
 import { candidateStateAt, confirmedStateAt } from './momentum';
 import { closedLapses, openLapse, recoveryEvents, recoveryRate } from './recovery';
-import { type HabitSchedulePeriod, scheduledOpportunitiesUpTo } from './schedule';
+import { retroactiveEntryWindowStart, type HabitSchedulePeriod, scheduledOpportunitiesUpTo } from './schedule';
 
 function habit(overrides: Partial<Habit> = {}): Habit {
   return {
@@ -239,6 +239,65 @@ describe('developer simulation never creates future Scheduled Opportunities', ()
     const createdAt = '2026-01-01T00:00:00.000Z';
     // backdatedCreatedAt only ever moves createdAt earlier, so a future-dated entry is a no-op.
     expect(backdatedCreatedAt(createdAt, ['2099-01-01'])).toBe(createdAt);
+  });
+});
+
+describe('backdatedCreatedAt never widens the retroactive-entry window past the simulated history it created (Phase 4 retroactive-entry-defect follow-up)', () => {
+  // backdatedCreatedAt intentionally moves a dev-simulated habit's createdAt earlier so Momentum/
+  // Recovery see the full simulated window (the original Phase 4 post-completion fix). That
+  // earlier createdAt also feeds retroactiveEntryWindowStart (the production retroactive-entry
+  // gate added by the follow-up fix), which takes the *later* of the fixed 7-day window and
+  // localDayKeyOf(createdAt) -- so a widened createdAt can only ever raise or match that floor,
+  // never lower it below the habit's own (possibly backdated) start. These tests prove that
+  // holds for both a scenario shorter than the window and one longer than it.
+  const today = '2026-02-20';
+
+  it('a scenario longer than 7 days: the fixed window still caps it, never reaching back to the scenario\'s true (earlier) start', () => {
+    // missYesterday spans today-8..today (9 entries) -- longer than the window, so the window
+    // itself (today-6, more recent than the backdated creation date) is the binding floor.
+    const pattern = scenarioPattern('missYesterday', today);
+    const windowDates = pattern.map((day) => day.date);
+    const simulated = habit({ createdAt: `${today}T09:00:00.000Z` });
+    const fixed = { ...simulated, createdAt: backdatedCreatedAt(simulated.createdAt, windowDates) };
+
+    expect(fixed.createdAt.slice(0, 10)).toBe(windowDates[0]); // createdAt backdated all the way to today-8...
+    const editableFrom = retroactiveEntryWindowStart(fixed, today);
+    expect(editableFrom).toBe(addDays(today, -6)); // ...but the edit floor is still capped at today-6
+    expect(editableFrom > windowDates[0]).toBe(true); // strictly inside the simulated history, not before it
+  });
+
+  it('a scenario shorter than 7 days: the habit\'s own (backdated) creation date is the tighter, binding floor', () => {
+    // building spans today-5..today (6 entries) -- creation date is more recent than today-6, so
+    // this covers the "creation date wins" branch through the real scenario pipeline.
+    const pattern = scenarioPattern('building', today);
+    const windowDates = pattern.map((day) => day.date);
+    const simulated = habit({ createdAt: `${today}T09:00:00.000Z` });
+    const fixed = { ...simulated, createdAt: backdatedCreatedAt(simulated.createdAt, windowDates) };
+
+    expect(fixed.createdAt.slice(0, 10)).toBe(windowDates[0]); // createdAt backdated to today-5
+    const editableFrom = retroactiveEntryWindowStart(fixed, today);
+    expect(editableFrom).toBe(windowDates[0]); // the scenario's own earliest date, today-5 -- not today-6
+    // Nothing before the simulated history's start is exposed as editable.
+    expect(scheduledOpportunitiesUpTo(fixed, [], addDays(windowDates[0], -1))).toEqual([]);
+  });
+
+  it('a 30-day debugFillHistory-style backfill: the fixed 7-day window still caps editability, despite createdAt now being 30 days back', () => {
+    const dates = datesFrom(addDays(today, -29), 30);
+    const simulated = habit({ createdAt: `${today}T09:00:00.000Z` });
+    const fixed = { ...simulated, createdAt: backdatedCreatedAt(simulated.createdAt, dates) };
+
+    // createdAt was pushed all the way back to cover the 30-day backfill...
+    expect(fixed.createdAt.slice(0, 10)).toBe(dates[0]);
+    // ...but the retroactive-entry floor never reaches that far -- it's still bounded to the
+    // last 7 days, exactly as for a genuinely old habit. Widening createdAt for Momentum/Recovery
+    // purposes never widens the production edit window beyond its fixed cap.
+    expect(retroactiveEntryWindowStart(fixed, today)).toBe(addDays(today, -6));
+  });
+
+  it('a habit created and simulated entirely today (0-day scenario window) exposes no editable day at all', () => {
+    const simulated = habit({ createdAt: `${today}T09:00:00.000Z` });
+    const fixed = { ...simulated, createdAt: backdatedCreatedAt(simulated.createdAt, [today]) };
+    expect(retroactiveEntryWindowStart(fixed, today)).toBe(today);
   });
 });
 

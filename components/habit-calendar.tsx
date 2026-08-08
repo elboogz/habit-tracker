@@ -13,10 +13,15 @@ function parseDayKey(key: string): Date {
 
 /**
  * Calendar-grid view of recent history — weeks as rows, days aligned under weekday columns.
- * `onDayPress` (Phase 4 retroactive entry, docs/phase-4-plan.md section 7.1-7.2) makes the 6 days
- * before today pressable -- today itself is excluded since Today's own checkbox/stepper is
- * already a first-class, always-visible editor and duplicating it here would be redundant.
- * Progress's existing usage passes nothing, so it stays visually and behaviorally unchanged.
+ * `onDayPress` (Phase 4 retroactive entry, docs/phase-4-plan.md section 7.1-7.2) makes days
+ * pressable -- today itself is always excluded since Today's own checkbox/stepper is already a
+ * first-class, always-visible editor and duplicating it here would be redundant. `minEditableDate`
+ * is the caller-supplied floor (see lib/domain/schedule.ts's `retroactiveEntryWindowStart`, which
+ * already intersects the fixed retroactive-entry window with the habit's own creation date -- this
+ * component has no notion of a Habit and just renders whatever floor it's given); it defaults to
+ * the raw 6-day-back window for backward compatibility if a caller doesn't supply one. Progress's
+ * existing usage passes neither `onDayPress` nor `minEditableDate`, so it stays visually and
+ * behaviorally unchanged.
  */
 export function HabitCalendar({
   history,
@@ -24,12 +29,14 @@ export function HabitCalendar({
   emptyColor,
   textColor,
   onDayPress,
+  minEditableDate,
 }: {
   history: DayStatus[];
   fillColor: string;
   emptyColor: string;
   textColor: string;
   onDayPress?: (date: string) => void;
+  minEditableDate?: string;
 }) {
   if (history.length === 0) return null;
 
@@ -41,7 +48,7 @@ export function HabitCalendar({
   for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
 
   const today = dayKey();
-  const editableFrom = addDays(today, -6);
+  const editableFrom = minEditableDate ?? addDays(today, -6);
 
   return (
     <ThemedView style={{ gap: 6 }}>

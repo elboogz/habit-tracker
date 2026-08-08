@@ -10,6 +10,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { confirmAction } from '@/lib/confirm';
 import { averageRecoveryTime, recoveryRate } from '@/lib/domain/recovery';
+import { retroactiveEntryWindowStart } from '@/lib/domain/schedule';
 import {
   consistency,
   countForDay,
@@ -134,6 +135,7 @@ export default function HabitDetailScreen() {
               fillColor={colors.tint}
               emptyColor={colors.icon}
               textColor={colors.text}
+              minEditableDate={retroactiveEntryWindowStart(habit, today)}
               onDayPress={(date) => setCorrectingDate((current) => (current === date ? null : date))}
             />
             {correctingDate && (

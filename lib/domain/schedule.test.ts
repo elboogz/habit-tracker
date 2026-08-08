@@ -1,10 +1,12 @@
 import type { Habit } from '../habit-types';
+import { addDays } from './day-key';
 import {
   type HabitSchedulePeriod,
   isScheduledOpportunity,
   localDayKeyOf,
   nextScheduledOpportunityAfter,
   parseDayKeyParts,
+  retroactiveEntryWindowStart,
   scheduleForDate,
   scheduledOpportunitiesUpTo,
   weekdayOf,
@@ -188,5 +190,69 @@ describe('nextScheduledOpportunityAfter (Phase 4 -- recovery card suppression)',
       period({ id: 'p2', effectiveFrom: '2026-05-10', paused: false, days: 'daily' }),
     ];
     expect(nextScheduledOpportunityAfter(periods, habit(), '2026-05-02')).toBe('2026-05-10');
+  });
+});
+
+describe('retroactiveEntryWindowStart (Phase 4 retroactive-entry-defect fix)', () => {
+  it('is bounded by the 7-day window for a long-lived habit -- the window, not the creation date, is the floor', () => {
+    const h = habit({ createdAt: '2020-01-01T00:00:00.000Z' });
+    expect(retroactiveEntryWindowStart(h, '2026-05-10')).toBe('2026-05-04'); // today - 6
+  });
+
+  it('is bounded by the habit\'s own creation date when the habit is newer than the window', () => {
+    const h = habit({ createdAt: '2026-05-08T00:00:00.000Z' }); // 2 days before "today"
+    expect(retroactiveEntryWindowStart(h, '2026-05-10')).toBe('2026-05-08');
+  });
+
+  it('equals "today" for a habit created today -- no prior date is ever editable', () => {
+    const h = habit({ createdAt: '2026-05-10T09:00:00.000Z' });
+    expect(retroactiveEntryWindowStart(h, '2026-05-10')).toBe('2026-05-10');
+  });
+
+  it('agrees with the window exactly at the boundary (habit created exactly 6 days ago)', () => {
+    const h = habit({ createdAt: '2026-05-04T00:00:00.000Z' });
+    expect(retroactiveEntryWindowStart(h, '2026-05-10')).toBe('2026-05-04');
+  });
+});
+
+describe('production retroactive-entry UI-path gating (regression coverage for the Phase 4 defect)', () => {
+  // Mirrors components/habit-calendar.tsx's isEditable predicate exactly:
+  //   day.date >= editableFrom && day.date < today
+  // with editableFrom now always sourced from retroactiveEntryWindowStart, so this proves the UI
+  // path cannot produce a pre-creation editable date, while every genuinely correctable day in the
+  // window is still reachable.
+  function isEditableThroughUi(h: Habit, date: string, today: string): boolean {
+    const editableFrom = retroactiveEntryWindowStart(h, today);
+    return date >= editableFrom && date < today;
+  }
+
+  it('a habit created today has no editable day at all -- no pre-creation log can be entered', () => {
+    const h = habit({ createdAt: '2026-05-10T08:00:00.000Z' });
+    for (let i = 0; i <= 10; i += 1) {
+      expect(isEditableThroughUi(h, addDays('2026-05-10', -i), '2026-05-10')).toBe(false);
+    }
+  });
+
+  it('a habit created 2 days ago only allows correcting the 2 days it has actually existed for', () => {
+    const h = habit({ createdAt: '2026-05-08T08:00:00.000Z' });
+    const today = '2026-05-10';
+    expect(isEditableThroughUi(h, '2026-05-09', today)).toBe(true); // yesterday, post-creation
+    expect(isEditableThroughUi(h, '2026-05-08', today)).toBe(true); // creation day itself
+    expect(isEditableThroughUi(h, '2026-05-07', today)).toBe(false); // day before creation
+    expect(isEditableThroughUi(h, '2026-05-04', today)).toBe(false); // well before creation, still inside the raw 7-day window
+  });
+
+  it('a long-lived habit keeps the full 7-day window editable, none of it pre-creation', () => {
+    const h = habit({ createdAt: '2020-01-01T00:00:00.000Z' });
+    const today = '2026-05-10';
+    for (let i = 1; i <= 6; i += 1) {
+      expect(isEditableThroughUi(h, addDays(today, -i), today)).toBe(true);
+    }
+    expect(isEditableThroughUi(h, addDays(today, -7), today)).toBe(false); // outside the window
+  });
+
+  it('today itself is never editable through this path regardless of creation date', () => {
+    const h = habit({ createdAt: '2020-01-01T00:00:00.000Z' });
+    expect(isEditableThroughUi(h, '2026-05-10', '2026-05-10')).toBe(false);
   });
 });
