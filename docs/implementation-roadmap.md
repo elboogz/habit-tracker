@@ -112,6 +112,8 @@ Includes fixes logged during the Acceptance Gate that were classified as cosmeti
 - Edit Habit modal — no back/cancel option; user can only save or delete.
 - Habit Detail stat tile spacing — cramped layout, needs breathing room.
 - Streak display truncation on smaller screens.
+- **Habit History previous-month navigation** (logged during pre-Phase-5 manual acceptance testing, 2026-08-08). Users want to browse earlier months of completion history, ideally via a swipeable or otherwise simple calendar navigation model. `components/habit-calendar.tsx` currently has no such capability — it renders exactly the fixed-length `history: DayStatus[]` window it's given, with no month-boundary or paging concept, so this is a structural addition (new navigation state, a different date-range-fetch shape, header controls), not a config change. Not implemented in the pre-Phase-5 pass for that reason.
+- **Habit Detail "Recent activity" list** (same session). The current textual list (`app/habit/[id].tsx`, capped at the last 10 log rows) is less useful than the calendar grid above it. Likely future direction: calendar becomes the primary historical view, previous months become browsable (per the item above), and Recent Activity shrinks to roughly the latest 5 entries. Deferred alongside the calendar-navigation item since trimming the list in isolation, without the calendar becoming the primary view, isn't an independently-justified change on its own.
 
 ---
 
@@ -140,6 +142,8 @@ Rewrite notification copy (morning-after notifications, reminders, cooldowns).
 Analytics recording (recovery events, momentum transitions, lapse reasons).
 
 Notification frequency reduction after repeated misses.
+
+**Reference notes (logged during pre-Phase-5 manual acceptance testing, 2026-08-08).** Competitor research (Daylio, Habitify, Me+) reinforces that notifications should eventually be context-aware rather than generic. Useful reference patterns: simple goal reminders, time-of-day context, "one habit left today" context, positive reminders after recent success, and return-oriented reminders reserved for a genuine lapse. The app's existing behavioural engine means future notification copy can be grounded in Momentum State, open lapse status, recovery, whether today's opportunity is merely still open (not yet a miss), recent completion history, and time of day — `quiet`, `recovering`, and `rebuilding` are context states, not "worse" ranks, and copy should reflect that (see CLAUDE.md's Momentum contracts). Per `docs/phase-1-audit.md` §6 and `docs/phase-4-plan.md` §11, the product must not copy streak-loss or shame framing such as "Don't lose your streak," "You've missed X for Y days," or "Get back on track." No notification changes were made in that pass — `lib/notifications.ts` is untouched; this is a reference note for whoever picks up Phase 8.
 
 ---
 

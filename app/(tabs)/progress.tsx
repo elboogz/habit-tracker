@@ -87,7 +87,6 @@ function HabitSnapshot({
 }) {
   const momentumState = confirmedStateAt(habit, schedulePeriods, logs, today);
   const copy = MOMENTUM_COPY[momentumState];
-  const isNew = momentumState === 'insufficient_data';
   const total = totalCompletions(habit.id, logs);
   const rate = recoveryRate(habit, schedulePeriods, logs, today);
   const recoveryCount = recoveryEvents(habit, schedulePeriods, logs, today).length;
@@ -109,22 +108,14 @@ function HabitSnapshot({
         total completions
       </ThemedText>
 
-      {isNew ? (
+      <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
+        Recovery rate: {recoveryRateText(rate.rolling)}
+        {recoveryCount > 0 ? ` · ${recoveryCount} recover${recoveryCount === 1 ? 'y' : 'ies'}` : ''}
+      </ThemedText>
+      {avgRecoveryDays !== null && (
         <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
-          Come back after a few more days to see recovery and consistency here.
+          Averages {avgRecoveryDays.toFixed(1)} day{avgRecoveryDays === 1 ? '' : 's'} to bounce back
         </ThemedText>
-      ) : (
-        <>
-          <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
-            Recovery rate: {recoveryRateText(rate.rolling)}
-            {recoveryCount > 0 ? ` · ${recoveryCount} recover${recoveryCount === 1 ? 'y' : 'ies'}` : ''}
-          </ThemedText>
-          {avgRecoveryDays !== null && (
-            <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
-              Averages {avgRecoveryDays.toFixed(1)} day{avgRecoveryDays === 1 ? '' : 's'} to bounce back
-            </ThemedText>
-          )}
-        </>
       )}
     </ThemedView>
   );

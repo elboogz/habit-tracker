@@ -191,3 +191,120 @@ All of the above (plus the enumerated unranked candidate/confirmed transition pa
 **Edge Function impact: none**, for the same reason as fix 2 — `momentum.ts` is not in `scripts/build-edge-functions.js`'s `SOURCES` whitelist.
 
 **Full verification.** `npm test` — 10 suites, 159 tests, all passing (8 new in `momentum.exhaustive.test.ts`). `npx tsc --noEmit` — clean. `npm run lint` — clean.
+
+## Post-completion manual acceptance fixes (pre-Phase-5)
+
+A targeted correctness pass over Progress/history issues found during manual on-device testing, requested before Phase 5 (AI Coach) begins consuming these behavioural outputs. Not a redesign; Phase 5 has still not begun.
+
+### Item 0 — precondition
+
+The approved current-day Momentum semantics (`docs/phase-2-implementation-plan.md` §3: "a miss is a Scheduled Opportunity for `date < today` with no qualifying Completion — today is never classified as missed") **remain unimplemented**. `lib/domain/momentum.ts`'s `recordsUpTo` builds its rate-window records from `scheduledOpportunitiesUpTo`, which includes today, and calls `isDoneOnDay` for it — an unlogged today reads as `completed: false` in every rate/quiet/building/rebuilding window, identically to a genuine miss. This was already flagged, and explicitly deferred, in "Post-completion fix 2" above (see the "Separately flagged, not fixed" paragraph). It is confirmed still unimplemented as of this pass. Per instruction, it was **not** implemented here.
+
+Item 3's Recovery display fix (below) is independent of this defect — it corrects a presentation-layer bug (Progress borrowing Momentum's confirmed state as a readiness proxy for an unrelated metric) that exists regardless of whether Momentum's current-day semantics are ever fixed. Item 2's proposed narrative override has intentionally **not** been implemented, specifically because presentation logic should not be built on top of a domain calculation already known to be incorrect (see below).
+
+### Item 1 — Progress "stale update": not a rendering defect
+
+No store-subscription bug was found. `habit-store.tsx`'s reducer returns a new `state` object on every mutation; the memoized `store` object depends on `[state, hydrated]`; `progress.tsx` reads `useHabitStore()` with no local memoization and recomputes every derived value fresh on every render; the tab navigator uses default React Navigation behaviour (`enableFreeze` is never called), so no screen is frozen while off-screen. **What causes recomputation now:** any state change produces a new context value, and Progress re-renders from it on the very next render — there is nothing to fix here.
+
+The perceived staleness is instead a downstream visual symptom of two independent, already-classified issues: item 2's confirmed-state hysteresis genuinely not updating for a day or more after a real change (by design — see Momentum contracts in `CLAUDE.md`), and item 3's presentation gate (below) hiding data that was, in fact, already fresh. Classified as domain-result / presentation-result symptoms, not stale-render.
+
+### Item 2 — Quiet stretch semantics: deferred pending the current-day fix
+
+**Investigation** (fully described in the prior turn, reproduced here for the record): a constructed history — 7 days completed, 3 missed (confirms `quiet`), then 2 genuine recoveries, with the 14th day ("today") left open — shows `candidateStateAt` at today reading `building` while `confirmedStateAt` remains `quiet`, and `openLapse(...)` at today is `null` (no unresolved miss run through yesterday). The badge and narrative both read as if the habit currently needs a return, when it does not. Root cause: today's own unlogged status breaks what would otherwise be a 3rd consecutive `rebuilding` candidate (days 12–14), which is item 0's defect manifesting at the confirmed level.
+
+**Decision: the proposed narrative override is not implemented.** Building presentation logic that reads `openLapse`/today-completed signals to override the `quiet` narrative would be built directly on top of a candidate sequence that item 0 already established is generated from incorrect current-day handling. The override's condition (`openLapse === null`) would frequently be true for exactly the wrong reason (a real defect suppressing genuine miss-run detection into a benign-looking `building`/other candidate), not because the history is genuinely healthy.
+
+**The proposed mapping is recorded here as a candidate solution only, not implemented, pending re-evaluation after the current-day fix** (see the follow-up proposal below, which found the specific scenario above no longer produces a `quiet` confirmed state at all once current-day semantics are corrected — suggesting the override may turn out to be unnecessary):
+
+- Today already completed → acknowledge today's completion instead of urging a return.
+- Today still open and `openLapse === null` → forward-looking, non-generic copy instead of "Today is a good day to return."
+- Today still open and `openLapse !== null` (genuine unresolved miss run) → unchanged, existing copy is correct.
+
+**Two problems with the specific copy proposed, recorded so they aren't re-proposed unchanged:**
+
+1. `"You kept it going today — that's what counts."` contains an em dash, which this project's copy rules (see the new "User-facing copy" section in `CLAUDE.md`) now explicitly prohibit in any user-facing string.
+2. `"Recent days have gone well — today's opportunity is still open."` (besides the same em-dash problem) overclaims what `openLapse === null` actually establishes. `openLapse` only judges through yesterday, so `null` means only "no unresolved miss run through yesterday" — it says nothing about days further back. In the exact day-14 example used to justify this branch, the same habit had a genuine 3-day miss four days earlier (days 9–11). Calling that "recent days have gone well" overstates the evidence the branch condition actually supports.
+
+No wording change was made to `app/(tabs)/progress.tsx`'s `MOMENTUM_COPY` or `HabitSnapshot`'s narrative rendering in this pass.
+
+### Item 3 — Writing Recovery discrepancy: fixed (presentation layer)
+
+**Investigation:** a constructed 6-completion, alternating complete/miss history (a plausible real "gaps and returns" pattern) produces `recoverableLapseInstances`: 5 resolved, all recovered; `recoveryRate.rolling`: `{ resolvedCount: 5, recoveredCount: 5, rate: 1, displayAsPercentage: true }`; `averageRecoveryTime`: 1 day — genuinely ready to display a 100% recovery rate per Recovery Rate's own domain rule (`RECOVERY_CONFIG.minResolvedLapsesForPercentage = 3`, already met at 5). But the momentum candidate sequence for the same history oscillates `recovering ↔ quiet` every single day and never accumulates 3 identical trailing candidates, and since both are off-chain (absent from `EVIDENCE_CHAIN`), the confirmed-state raise rule never applies either — **confirmed Momentum State is permanently trapped at `insufficient_data`** for this history (see the "Trapped confirmed state" section below).
+
+**The bug:** `app/(tabs)/progress.tsx`'s `HabitSnapshot` gated the entire Recovery Rate/Recovery Count/Average Recovery Time block behind `isNew = confirmedStateAt(...) === 'insufficient_data'`, showing "Come back after a few more days to see recovery and consistency here." instead whenever Momentum's confirmed state was `insufficient_data` — regardless of what Recovery Rate's own domain output actually had to say. **This is an architectural defect, not merely a UI inconvenience: it violates this project's core principle (`CLAUDE.md`, "Shared domain layer") that no screen may redefine or gate a behavioural concept using a rule that concept's own domain layer doesn't define.** Recovery Rate already owns its complete, correct readiness rule — `recoveryRateText` (same file) already reads `RecoveryRateResult.resolvedCount`/`displayAsPercentage` and degrades gracefully (`"Not enough recovery history yet"` when `resolvedCount === 0`; `"Recovery history still building"` when below the percentage threshold). The outer `momentumState === 'insufficient_data'` gate was a second, competing readiness rule for the same concept, invented in the screen and sourced from an unrelated domain output (Momentum State), which is exactly the "no screen may reimplement a concept that lives here" violation the domain layer's design is meant to prevent.
+
+**The fix:** removed the `isNew` gate and its placeholder branch from `HabitSnapshot` entirely (`app/(tabs)/progress.tsx`). The Recovery Rate block now always renders, letting `recoveryRateText`/`avgRecoveryDays !== null`/`recoveryCount > 0` — Recovery Rate's own, already-correct domain output — decide what to show. No change to `lib/domain/recovery.ts` or `RECOVERY_CONFIG`. For the alternating-history case above, this now correctly surfaces "Recovery rate: 100% · 5 recoveries" and "Averages 1.0 day to bounce back" regardless of Momentum's confirmed state.
+
+**Other occurrences of the same coupling — reported, not changed.** A grep of `app/(tabs)/progress.tsx` and `app/habit/[id].tsx` for every place a Momentum state gates a non-Momentum concept found exactly one more instance:
+
+- `app/(tabs)/progress.tsx`, in the per-habit list (`ProgressScreen`'s render, ~line 299): `const isNew = confirmedStateAt(habit, schedulePeriods, logs, today) === 'insufficient_data'; const habitConsistencyText = consistencyText(habit, logs, days, isNew);` — Momentum's confirmed state chooses whether the below-heatmap Consistency line shows a raw count (`"2 of 7 days"`) or a percentage. `consistency()` (`lib/domain/habit-stats.ts`) has no "insufficient data" concept of its own — it's a plain fraction over a fixed window regardless of habit age — so this is the same pattern: Momentum State standing in as a readiness proxy for a metric that doesn't define that concept itself. Because this habit-list `isNew` also gets recomputed from the trapped-state history above, a habit like the Writing example would show a raw count instead of a consistency percentage indefinitely, for the same underlying reason as the Recovery bug.
+- `app/habit/[id].tsx` has no Momentum import or usage at all — no coupling found there.
+
+Per instruction, this second occurrence was **not** changed in this pass — listed here for separate review.
+
+### Current-day Momentum semantics: confirmed defect, follow-up proposal (not implemented)
+
+A local, uncommitted scratch change was made to `lib/domain/momentum.ts`'s `recordsUpTo` — excluding the record for `asOfDate` itself from the window when unlogged, rather than counting it as `completed: false` — to regenerate the Item 2 and Item 3 traces under corrected current-day semantics, then fully reverted (`git checkout -- lib/domain/momentum.ts`; confirmed clean via `git diff --stat`). **This diff was never committed and is not part of this pass's pushed changes.**
+
+**New sequences under the scratch fix:**
+
+Item 2's day-14 history (7 completed, 3 missed, 2 recovered, day 14 open):
+
+| date | candidate (before fix) | confirmed (before) | candidate (after fix) | confirmed (after) |
+|---|---|---|---|---|
+| d9 | quiet | steady | building | steady |
+| d10 | quiet | steady | quiet | steady |
+| d11 | quiet | quiet | quiet | steady |
+| d12 | rebuilding | quiet | rebuilding | steady |
+| d13 | rebuilding | quiet | rebuilding | steady |
+| d14 (today, open) | building | **quiet** | rebuilding | **rebuilding** |
+
+Under corrected semantics, this history **never confirms `quiet` at all** — confirmed stays `steady` throughout the decline, then jumps directly to `rebuilding` once three consecutive `rebuilding` candidates (d12–d14) hold. This directly suggests the Item 2 narrative override may not even be needed for this class of scenario once the real fix lands — reinforcing the decision to defer it rather than build it against the current, known-incorrect candidates.
+
+Item 3's alternating 6-completion history:
+
+| date | candidate (before) | confirmed (before) | candidate (after) | confirmed (after) |
+|---|---|---|---|---|
+| d1–d2 | insufficient_data | insufficient_data | insufficient_data | insufficient_data |
+| d3 | recovering | insufficient_data | recovering | insufficient_data |
+| d4 | quiet | insufficient_data | recovering | insufficient_data |
+| d5 | recovering | insufficient_data | recovering | **recovering** |
+| d6–d11 | quiet/recovering (alternating) | insufficient_data (trapped) | recovering | recovering |
+
+Under corrected semantics, the oscillation stops: `quiet` never triggers on an open "today" evaluation (once today's own unlogged record is excluded from its own window, the window's last visible entry is always an already-resolved past record, which for this alternating pattern is always a completion — failing `isCurrentlyQuiet`'s own-window-must-end-in-a-miss gate). Candidates converge to a stable `recovering` by day 5 and confirm there, never reaching `insufficient_data`'s trap. **This directly answers "is the `quiet` narrative override or the Recovery gate fix still needed after the domain fix": for this specific history, both symptoms disappear at the domain level once current-day semantics are corrected** — though Item 3's presentation fix remains independently correct regardless (a screen should never gate one domain concept's display on another's output, whether or not Momentum happens to be trapped).
+
+**Critical finding — the naive fix is not safe to ship as-is.** Re-running the full suite under the scratch change found three regressions, not zero:
+
+1. `momentum.test.ts`'s locked hysteresis test ("requires the new candidate to hold for 3 opportunities before the confirmed state changes") fails: expected `quiet`, got `steady` — the decline-to-`quiet` transition timing shifts by at least one opportunity, because excluding "today" from its own window during a live walk-forward reconstruction (`confirmedStateAt` calls `candidateStateAt` once per historical date, treating each in turn as if it were "today") delays how quickly a miss run's evidence counts in every affected day's own candidate reading, not only the literal current day's.
+2. `momentum.exhaustive.test.ts`'s today-open-vs-completed monotonicity sweep, previously **0 violations**, now finds **3 new confirmed-level violations** (e.g. prefix `[1,1,1,0]`: leaving day 4 open reads confirmed `building`, completing it instead reads confirmed `insufficient_data` — strictly worse, the exact class of regression Post-completion fix 3 above was written to eliminate).
+3. The 7-state reachability witness for `rebuilding` changes from the locked `'0000111'` to `'0000110'` — still reachable, but at a different history, breaking the exact-witness regression lock.
+
+**Root cause of the naive fix's regressions:** `candidateStateAt(habit, periods, logs, asOfDate)` has no way to distinguish "the literal, real, live current day" from "a historical date being walked as if it were today" — `confirmedStateAt` calls it once per historical Scheduled Opportunity, and applying "exclude self if unlogged" uniformly at every one of those calls over-applies the "today is never classified as missed" rule to every day in the reconstruction, not just the one day it was written for.
+
+**Recommendation for the actual follow-up implementation:** thread the real, live `today` (as received by `confirmedStateAt`) through to `candidateStateAt` as a value distinct from `asOfDate`, and apply the exclude-if-unlogged rule only when `asOfDate === today` (i.e., only for the final, live evaluation point of the walk — every earlier historical date is, by the time it's being scanned, a fully-resolved past fact and should keep today's existing "unlogged = miss" treatment). This is a `candidateStateAt`/`confirmedStateAt` signature change, not a one-line fix, and needs its own exhaustive monotonicity/reachability re-verification (the existing suites in `momentum.exhaustive.test.ts` are exactly the right tool for that) before it can be proposed for approval. Not implemented in this pass, per instruction.
+
+### Trapped confirmed state: documented, not yet a fixed invariant
+
+A characterization test was added — `lib/domain/momentum.test.ts`, describe block `"known issue (documented, not fixed by this pass): confirmed state can become permanently trapped at insufficient_data"` — asserting the exact 11-opportunity alternating-completion sequence from Item 3 stays at confirmed `insufficient_data` for its entire length, and pinning the full candidate sequence (`insufficient_data, insufficient_data, recovering, quiet, recovering, quiet, recovering, quiet, recovering, quiet, recovering`). It documents current, observed behaviour; it is explicitly **not** a locked contract and asserts no new invariant.
+
+**This is a plausible real usage pattern, not merely a synthetic edge case** — any habit genuinely done every other day for an extended stretch (a common, deliberate cadence for some habits, not just an unlucky one) produces exactly this oscillation and would show "Getting started" / `insufficient_data` copy indefinitely on Progress, no matter how long the habit has actually been tracked or how well it's actually recovering.
+
+**Why the existing monotonicity and reachability proofs don't detect this.** `momentum.exhaustive.test.ts`'s today-open-vs-completed monotonicity sweep only ever compares two histories that differ in whether the *final* day is open or completed — it says nothing about a habit that alternates for its entire lifetime, so a permanently-oscillating sequence is outside its comparison space entirely. The 7-state reachability sweep only asks whether each state is reachable *at all* within a bounded history length — it has no notion of "does the confirmed state ever get stuck," so a state (`insufficient_data`) that is trivially reachable (it's the starting value) passing that check says nothing about whether it can also become *inescapable*. Neither proof was designed to detect a state that is reachable, never left, and permanently retained regardless of how much further evidence accumulates — that is a different property (liveness/eventual-escape, not reachability or single-step monotonicity) than either existing suite checks.
+
+**Recommendation:** a future product review should decide whether "every candidate-level trapping class must eventually be escapable given enough opportunities" should become a permanent behavioural invariant (with its own exhaustive proof, analogous to the existing two), and if so, whether the fix belongs in `computeConfirmedMomentumState`'s Rule 2 (extending chain-comparability to cover more off-chain transitions) or in the underlying candidate classification (`isRecentShortRecovery`/`isCurrentlyQuiet`'s oscillation-prone conditions themselves). Not decided or implemented here.
+
+### Item 4 — Habit History UX improvements: recorded, not implemented
+
+Recorded in `docs/implementation-roadmap.md`'s "Product Polish" section (previous-month calendar navigation, Recent Activity trimmed to ~5 entries) rather than implemented — `components/habit-calendar.tsx` has no month-boundary or paging concept today, so browsing earlier months is a structural addition, not a trivial config change, and trimming the Recent Activity list in isolation isn't independently justified without the calendar becoming the primary view first.
+
+### Item 5 — Notification reference notes: recorded, not implemented
+
+Recorded in `docs/implementation-roadmap.md`'s "Phase 8 — Notifications and analytics" section: context-aware notification patterns grounded in Momentum State / open lapse / recovery / today-still-open / recent history / time-of-day, and the existing shame-framing avoid-list. `lib/notifications.ts` untouched.
+
+### Verification
+
+- `npm test` — 10 suites, 161 tests, all passing (2 new: the Item 3 characterization test in `momentum.test.ts`, plus its own sub-assertions).
+- `npx tsc --noEmit` — clean, no output.
+- `npm run lint` — clean, no warnings or errors.
+- `npx expo export --platform web` — bundles cleanly (1288 modules), all 15 static routes present including `/progress` and `/(tabs)/progress`.
+- **Verification method per issue:** Item 1 (no code change) — code-path inspection of `habit-store.tsx`'s reducer/memoization and `progress.tsx`'s render, confirmed no memoization gap exists. Items 2 and 3's investigations, and the current-day-fix follow-up traces, were verified by **actually executing** the real domain functions against constructed fixtures (not manual reasoning alone) — see the temporary investigation file used during this pass (deleted before commit; the permanent characterization test in `momentum.test.ts` retains the Item 3 trace as a regression-locked assertion). Item 3's fix was verified the same way, plus a full suite run. None of this was verified on a physical device or in an authenticated runtime in this pass — that verification is still required before considering these fixes fully accepted.

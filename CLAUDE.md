@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The locked product specification is at docs/habit-tracker-evolution-plan.md. All work must comply with it. Do not expand scope or add product features beyond it.
 
+## User-facing copy
+
+No em dashes in user-facing copy: hard-coded UI strings, AI Coach output (`supabase/functions/ai-insights/index.ts`'s prompts and any generated nudge/reflection text), documentation examples written to be pasted directly into the UI, and notification copy (`lib/notifications.ts`). This applies to text the user actually reads on-screen or in a notification — it does not apply to code comments or to this documentation's own prose. Any proposed user-facing copy containing an em dash must be rewritten before it's implemented, not shipped as-is.
+
 ## Commands
 
 - `npx expo start` — start the Metro dev server (scan the QR with Expo Go, or press `i`/`a`/`w` for simulator/emulator/web)

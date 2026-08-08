@@ -276,3 +276,47 @@ describe('regression: original manually-reproduced monotonicity violation (day 5
     expect(confirmedStateAt(h, [], completedThroughDay5, day5)).toBe('building');
   });
 });
+
+// Characterization test only -- documents an observed, known behaviour; it is not a locked
+// contract and does not assert a new invariant. See docs/phase-4-completion-report.md's
+// "Post-completion manual acceptance fixes" section ("Trapped confirmed state") for the full
+// writeup, including why the existing monotonicity and reachability proofs do not detect this
+// case and a recommendation that a future product review decide whether trapped-state avoidance
+// should become a permanent behavioural invariant.
+describe('known issue (documented, not fixed by this pass): confirmed state can become permanently trapped at insufficient_data', () => {
+  it('an alternating complete/miss/complete/miss history never accumulates 3 identical trailing candidates, so confirmed never leaves insufficient_data', () => {
+    const h = habit('2026-01-01');
+    // A plausible real usage pattern -- not a contrived synthetic edge case -- e.g. a habit
+    // genuinely done every other day for weeks. 6 completions, 5 misses, all interspersed.
+    const days = datesFrom('2026-01-01', 11);
+    const completedDates = [days[0], days[2], days[4], days[6], days[8], days[10]];
+    const logs = completedDates.map(log);
+
+    // The raw candidate sequence oscillates between the two off-chain states 'recovering' and
+    // 'quiet' (each qualifying lapse is exactly 1 opportunity long, and each recovery is
+    // immediately followed by a new miss) -- it never repeats the same value 3 times in a row
+    // (Rule 1 never fires), and 'recovering'/'quiet' are both absent from EVIDENCE_CHAIN, so Rule
+    // 2's chain-raise never applies either (some candidate in every trailing window is always
+    // chain-incomparable). Confirmed is therefore permanently retained at its initial value,
+    // 'insufficient_data', for the entire trace below -- even though this habit has 5 resolved
+    // Recoverable Lapse Opportunities, 5 Recovery Events, and a 100% rolling Recovery Rate by the
+    // final day (verified directly against lib/domain/recovery.ts in the completion report).
+    const confirmedSequence = days.map((d) => confirmedStateAt(h, [], logs, d));
+    expect(confirmedSequence).toEqual(Array(11).fill('insufficient_data'));
+
+    const candidateSequence = days.map((d) => candidateStateAt(h, [], logs, d));
+    expect(candidateSequence).toEqual([
+      'insufficient_data',
+      'insufficient_data',
+      'recovering',
+      'quiet',
+      'recovering',
+      'quiet',
+      'recovering',
+      'quiet',
+      'recovering',
+      'quiet',
+      'recovering',
+    ]);
+  });
+});
