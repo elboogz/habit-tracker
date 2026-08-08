@@ -82,6 +82,8 @@ A candidate-level issue indicates a contradiction in `candidateStateAt`. A confi
 
 The behavioural fixtures in `docs/phase-2-implementation-plan.md` §8 are behavioural contracts, not implementation suggestions. If a proposed change alters a locked fixture, its explicitly specified transition timing, or any other behaviour that the approved specification marks as contractual, stop and report the contradiction. Do not resolve it by editing fixture expectations without explicit approval.
 
+**The trailing-window confirmation mechanism is not architecturally settled.** Two open product decisions are recorded in `docs/phase-4-completion-report.md`'s "Open product decisions blocking Phase 5" section — do not treat the current mechanism as a fixed foundation for new work until they're resolved there.
+
 ### Auth & Supabase sync
 
 - [lib/supabase.ts](lib/supabase.ts) — the Supabase client singleton, reading `EXPO_PUBLIC_SUPABASE_URL`/`EXPO_PUBLIC_SUPABASE_ANON_KEY` from `.env` (see `.env.example`). Auth tokens persist to `AsyncStorage`; an `AppState` listener starts/stops token auto-refresh on foreground/background.
