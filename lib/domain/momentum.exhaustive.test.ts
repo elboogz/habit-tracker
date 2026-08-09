@@ -56,8 +56,8 @@ function evalTodayOpenVsCompleted(prefix: number[]) {
   return {
     prefix,
     today,
-    openCandidate: candidateStateAt(h, [], baseLogs, today),
-    completedCandidate: candidateStateAt(h, [], completedLogs, today),
+    openCandidate: candidateStateAt(h, [], baseLogs, today, today),
+    completedCandidate: candidateStateAt(h, [], completedLogs, today, today),
     openConfirmed: confirmedStateAt(h, [], baseLogs, today),
     completedConfirmed: confirmedStateAt(h, [], completedLogs, today),
   };
@@ -79,7 +79,7 @@ describe('perfect_completion_history stays pinned to its locked transition oppor
     expect(confirmed[6]).toBe('steady'); // opportunity 7 (0-indexed 6)
     expect(confirmed[9]).toBe('thriving'); // opportunity 10 (0-indexed 9)
     // The locked candidate-level checkpoint from the same fixture row, unaffected by this change.
-    expect(candidateStateAt(h, [], logs, dates[7])).toBe('thriving'); // opportunity 8
+    expect(candidateStateAt(h, [], logs, dates[7], dates[7])).toBe('thriving'); // opportunity 8
   });
 });
 
@@ -177,7 +177,7 @@ describe('exhaustive: today-open-vs-completed monotonicity over the evidence cha
 });
 
 describe('exhaustive: all 7 MomentumStateKey values remain reachable as a confirmed state', () => {
-  it('finds a witness history for each state, up to length 14, unchanged from before this fix', () => {
+  it('finds a witness history for each state, up to length 14, same shortest length as before this fix', () => {
     const allStates: MomentumStateKey[] = [
       'insufficient_data',
       'building',
@@ -202,16 +202,27 @@ describe('exhaustive: all 7 MomentumStateKey values remain reachable as a confir
       if (Object.keys(witness).length === allStates.length) break;
     }
 
-    // Witnesses recorded here, unchanged from the pre-hysteresis-fix search (see the completion
-    // report): rebuilding's shortest witness is still the 7-day '0000111' pattern. Re-run again,
-    // unmodified, after the positive-family evidence floor (below) -- still unchanged, proving the
-    // floor does not reopen the rebuilding-precedence bug (Post-completion fix 2): rebuilding
-    // remains reachable as confirmed via the exact same witness, through the exact same mechanism
-    // (Rule 1's 3-identical-candidates match, which the floor never touches).
+    // Witnesses re-recorded here after the current-day Momentum fix (docs/phase-4-completion-
+    // report.md, "Current-day design, settled" / its implementation section). Every state's
+    // shortest witness LENGTH is unchanged from before this fix (insufficient_data 1, quiet/
+    // building/recovering 5, rebuilding/steady 7, thriving 10) -- expected, since recordsUpTo
+    // itself never changed and every window-size/sufficiency gate is unaffected by this fix.
+    //
+    // rebuilding's specific witness pattern changed from '0000111' (today completed) to '0000110'
+    // (today open) -- predicted and pre-verified by an earlier scratch pass before this fix was
+    // implemented (see the completion report). Both are genuine, independently valid 7-day
+    // witnesses for rebuilding: with today open, its own record is now excluded from the trailing
+    // rebuilding window's "must currently be completing again" evidence check (this fix's whole
+    // point), so the window falls back to yesterday's completion instead and still qualifies --
+    // today-open reaches rebuilding exactly as readily as today-completed does. The exhaustive mask
+    // search (0, 1, 2, ...) simply finds the numerically smaller mask ('0000110' = 48) before the
+    // other ('0000111' = 112); this is a search-order artifact, not a behavioural regression, and
+    // does not reopen the rebuilding-precedence bug (Post-completion fix 2) -- rebuilding is still
+    // only ever produced as a confirmed value via Rule 1's 3-identical-candidates match, unchanged.
     for (const state of allStates) {
       expect(witness[state]).toBeDefined();
     }
-    expect(witness.rebuilding).toBe('0000111');
+    expect(witness.rebuilding).toBe('0000110');
   }, 60000);
 });
 

@@ -32,46 +32,46 @@ describe('candidate state -- individual scenarios', () => {
   it('insufficient_data for a brand-new habit with fewer than 3 opportunities', () => {
     const h = habit('2026-01-01');
     const logs = [log('2026-01-01')];
-    expect(candidateStateAt(h, [], logs, '2026-01-02')).toBe('insufficient_data');
+    expect(candidateStateAt(h, [], logs, '2026-01-02', '2026-01-02')).toBe('insufficient_data');
   });
 
   it('building once a short window clears its completion-rate bar with no prior window to compare against', () => {
     const h = habit('2026-01-01');
     const days = datesFrom('2026-01-01', 3);
     const logs = days.map(log);
-    expect(candidateStateAt(h, [], logs, days[2])).toBe('building');
+    expect(candidateStateAt(h, [], logs, days[2], days[2])).toBe('building');
   });
 
   it('steady once a 5-opportunity window clears 80% with no open lapse', () => {
     const h = habit('2026-01-01');
     const days = datesFrom('2026-01-01', 5);
     const logs = days.map(log);
-    expect(candidateStateAt(h, [], logs, days[4])).toBe('steady');
+    expect(candidateStateAt(h, [], logs, days[4], days[4])).toBe('steady');
   });
 
   it('thriving once an 8-opportunity window is entirely completed', () => {
     const h = habit('2026-01-01');
     const days = datesFrom('2026-01-01', 8);
     const logs = days.map(log);
-    expect(candidateStateAt(h, [], logs, days[7])).toBe('thriving');
+    expect(candidateStateAt(h, [], logs, days[7], days[7])).toBe('thriving');
   });
 
   it('recovering right after closing a short (<=2 opportunity) lapse', () => {
     const h = habit('2026-01-01');
     const logs = [log('2026-01-01'), log('2026-01-03')]; // 01-02 missed, 01-03 recovers it
-    expect(candidateStateAt(h, [], logs, '2026-01-03')).toBe('recovering');
+    expect(candidateStateAt(h, [], logs, '2026-01-03', '2026-01-03')).toBe('recovering');
   });
 
   it('rebuilding right after closing a longer (>=3 opportunity) lapse', () => {
     const h = habit('2026-01-01');
     const logs = [log('2026-01-01'), log('2026-01-05')]; // 01-02..01-04 missed (3), 01-05 recovers it
-    expect(candidateStateAt(h, [], logs, '2026-01-05')).toBe('rebuilding');
+    expect(candidateStateAt(h, [], logs, '2026-01-05', '2026-01-05')).toBe('rebuilding');
   });
 
   it('quiet while currently inside an open lapse covering most of the recent window', () => {
     const h = habit('2026-01-01');
     const logs = [log('2026-01-01')]; // 01-02, 01-03, 01-04 all missed and still open
-    expect(candidateStateAt(h, [], logs, '2026-01-04')).toBe('quiet');
+    expect(candidateStateAt(h, [], logs, '2026-01-04', '2026-01-04')).toBe('quiet');
   });
 });
 
@@ -80,14 +80,14 @@ describe('momentum trend', () => {
     const h = habit('2026-01-01');
     const days = datesFrom('2026-01-01', 3);
     const logs = days.map(log);
-    expect(momentum(h, [], logs, days[2], 3)).toBe(0);
+    expect(momentum(h, [], logs, days[2], days[2], 3)).toBe(0);
   });
 
   it('is positive when the recent window improves on the prior one', () => {
     const h = habit('2026-01-01');
     // Prior 3 (01-01..01-03): 1 of 3 completed. Recent 3 (01-04..01-06): 3 of 3 completed.
     const logs = [log('2026-01-01'), log('2026-01-04'), log('2026-01-05'), log('2026-01-06')];
-    expect(momentum(h, [], logs, '2026-01-06', 3)).toBeGreaterThan(0);
+    expect(momentum(h, [], logs, '2026-01-06', '2026-01-06', 3)).toBeGreaterThan(0);
   });
 });
 
@@ -199,7 +199,7 @@ describe('rebuilding evaluation precedence (post-completion fix)', () => {
   it('a >=3-miss lapse followed by resumed completion reaches candidate rebuilding', () => {
     const h = habit('2026-01-01');
     const logs = [log('2026-01-01'), log('2026-01-05')]; // 01-02..01-04 missed (3), 01-05 recovers it
-    expect(candidateStateAt(h, [], logs, '2026-01-05')).toBe('rebuilding');
+    expect(candidateStateAt(h, [], logs, '2026-01-05', '2026-01-05')).toBe('rebuilding');
   });
 
   it('rebuilding becomes the confirmed state once its candidate holds for 3 consecutive opportunities, not before', () => {
@@ -224,7 +224,7 @@ describe('rebuilding evaluation precedence (post-completion fix)', () => {
     const day11 = addDays(day10, 1);
     const logs = [...perfectDays.map(log), log(day9), log(day10), log(day11)];
 
-    expect(candidateStateAt(h, [], logs, day9)).toBe('recovering');
+    expect(candidateStateAt(h, [], logs, day9, day9)).toBe('recovering');
     expect(confirmedStateAt(h, [], logs, day11)).toBe('recovering');
   });
 
@@ -304,18 +304,31 @@ describe('known issue (documented, not fixed by this pass): confirmed state can 
     const confirmedSequence = days.map((d) => confirmedStateAt(h, [], logs, d));
     expect(confirmedSequence).toEqual(Array(11).fill('insufficient_data'));
 
-    const candidateSequence = days.map((d) => candidateStateAt(h, [], logs, d));
+    // Expected value changed by the current-day Momentum fix (docs/phase-4-completion-report.md,
+    // "Current-day design, settled" / the follow-up implementation section): this line calls
+    // candidateStateAt(..., d, d), i.e. treats each day as its own live "today" -- not the same
+    // question confirmedSequence above asks, where every day is judged as a resolved past fact
+    // relative to the walk's one real anchor (days[10]). Under the fix, an odd day's own record is
+    // now unlogged-and-pending exactly when it's evaluated as its own "today", so it's set aside
+    // from that day's evidence judgment entirely (docs/phase-2-implementation-plan.md's "today is
+    // never classified as missed") rather than counted as the miss that used to make
+    // isCurrentlyQuiet's window-must-end-in-a-miss gate fire every other day. The oscillation
+    // collapses to a steady 'recovering' from day 3 onward as a direct, expected consequence -- not
+    // a new candidate-level rule and not evidence of the trap resolving (confirmedSequence above,
+    // the value that actually drives the displayed badge, is unchanged and still permanently
+    // trapped at 'insufficient_data', exactly as this test documents).
+    const candidateSequence = days.map((d) => candidateStateAt(h, [], logs, d, d));
     expect(candidateSequence).toEqual([
       'insufficient_data',
       'insufficient_data',
       'recovering',
-      'quiet',
       'recovering',
-      'quiet',
       'recovering',
-      'quiet',
       'recovering',
-      'quiet',
+      'recovering',
+      'recovering',
+      'recovering',
+      'recovering',
       'recovering',
     ]);
   });

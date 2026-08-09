@@ -112,7 +112,7 @@ describe('simulated history is behaviorally equivalent to genuine history', () =
     const genuine = habit({ createdAt: `${allDates[0]}T09:00:00.000Z` });
     const logs = buildLogs();
     expect(consistency(genuine, logs, 14, today)).toBeCloseTo(12 / 14);
-    expect(candidateStateAt(genuine, [], logs, today)).not.toBe('insufficient_data');
+    expect(candidateStateAt(genuine, [], logs, today, today)).not.toBe('insufficient_data');
   });
 
   it('the same logs backfilled today (bug reproduction) produce insufficient_data if createdAt is left at "today"', () => {
@@ -122,7 +122,7 @@ describe('simulated history is behaviorally equivalent to genuine history', () =
     expect(totalCompletions('h1', logs)).toBe(completedDates.length);
     expect(consistency(buggy, logs, 14, today)).toBeCloseTo(12 / 14);
     // But Scheduled-Opportunity-based Momentum only sees today's single opportunity -- the bug.
-    expect(candidateStateAt(buggy, [], logs, today)).toBe('insufficient_data');
+    expect(candidateStateAt(buggy, [], logs, today, today)).toBe('insufficient_data');
   });
 
   it('applying backdatedCreatedAt to the simulated habit resolves the inconsistency identically to genuine history', () => {
@@ -133,11 +133,11 @@ describe('simulated history is behaviorally equivalent to genuine history', () =
 
     const genuine = habit({ createdAt: `${allDates[0]}T09:00:00.000Z` });
 
-    expect(candidateStateAt(fixed, [], logs, today)).toBe(candidateStateAt(genuine, [], logs, today));
+    expect(candidateStateAt(fixed, [], logs, today, today)).toBe(candidateStateAt(genuine, [], logs, today, today));
     expect(confirmedStateAt(fixed, [], logs, today)).toBe(confirmedStateAt(genuine, [], logs, today));
     expect(consistency(fixed, logs, 14, today)).toBe(consistency(genuine, logs, 14, today));
     expect(totalCompletions('h1', logs)).toBe(completedDates.length);
-    expect(candidateStateAt(fixed, [], logs, today)).not.toBe('insufficient_data');
+    expect(candidateStateAt(fixed, [], logs, today, today)).not.toBe('insufficient_data');
   });
 });
 
@@ -150,7 +150,7 @@ describe('simulated sparse/new habit history correctly remains insufficient_data
     const logs = sparseDates.map(log);
     // Only 2 Scheduled Opportunities exist (yesterday + today) -- genuinely insufficient.
     expect(scheduledOpportunitiesUpTo(fixed, [], today).length).toBe(2);
-    expect(candidateStateAt(fixed, [], logs, today)).toBe('insufficient_data');
+    expect(candidateStateAt(fixed, [], logs, today, today)).toBe('insufficient_data');
   });
 });
 

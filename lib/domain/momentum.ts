@@ -31,9 +31,26 @@ function lastN(records: OpportunityRecord[], n: number): OpportunityRecord[] {
   return records.slice(-n);
 }
 
-function completionRate(records: OpportunityRecord[]): number {
-  if (records.length === 0) return 0;
-  return records.filter((record) => record.completed).length / records.length;
+/**
+ * Whether `record` is today's own opportunity and it hasn't been completed yet -- not evidence of
+ * either a completion or a miss, just not yet resolved. The scheduling side (`records.length` and
+ * every window-size/sufficiency check) counts this record regardless; the evidence side (every
+ * predicate below that inspects `.completed` values) sets it aside via `resolvedView` before
+ * judging, per the settled current-day design (docs/phase-4-completion-report.md, "Current-day
+ * design, settled: scheduling fact vs. evidence judgment").
+ */
+function isPending(record: OpportunityRecord, today: string): boolean {
+  return record.date === today && !record.completed;
+}
+
+function resolvedView(records: OpportunityRecord[], today: string): OpportunityRecord[] {
+  return records.filter((record) => !isPending(record, today));
+}
+
+function completionRate(records: OpportunityRecord[], today: string): number {
+  const resolved = resolvedView(records, today);
+  if (resolved.length === 0) return 0;
+  return resolved.filter((record) => record.completed).length / resolved.length;
 }
 
 /**
@@ -46,49 +63,53 @@ export function momentum(
   periods: HabitSchedulePeriod[],
   logs: HabitLog[],
   asOfDate: string,
+  today: string,
   window: number,
 ): number {
   const records = recordsUpTo(habit, periods, logs, asOfDate);
   const recent = lastN(records, window);
   const priorWindow = records.slice(Math.max(0, records.length - window * 2), Math.max(0, records.length - window));
-  const recentRate = completionRate(recent);
+  const recentRate = completionRate(recent, today);
   // No prior window to compare against (a very new habit): treat as neutral (0), not a false signal.
-  const priorRate = priorWindow.length === 0 ? recentRate : completionRate(priorWindow);
+  const priorRate = priorWindow.length === 0 ? recentRate : completionRate(priorWindow, today);
   return Math.max(-1, Math.min(1, recentRate - priorRate));
 }
 
 function meetsRateWindow(
   records: OpportunityRecord[],
   cfg: { window: number; minCompletionRate: number },
+  today: string,
   options: { requireNoOpenLapse?: boolean; requireNoLapseAtAll?: boolean } = {},
 ): boolean {
   const window = lastN(records, cfg.window);
   if (window.length < cfg.window) return false;
-  const rate = completionRate(window);
+  const rate = completionRate(window, today);
   if (rate < cfg.minCompletionRate) return false;
-  if (options.requireNoLapseAtAll && window.some((record) => !record.completed)) return false;
-  if (options.requireNoOpenLapse && !window[window.length - 1].completed) return false;
+  const resolved = resolvedView(window, today);
+  if (options.requireNoLapseAtAll && resolved.some((record) => !record.completed)) return false;
+  if (options.requireNoOpenLapse && !resolved[resolved.length - 1].completed) return false;
   return true;
 }
 
-function meetsBuilding(records: OpportunityRecord[]): boolean {
+function meetsBuilding(records: OpportunityRecord[], today: string): boolean {
   const cfg = MOMENTUM_CONFIG.building;
   const window = lastN(records, cfg.window);
   if (window.length < cfg.window) return false;
-  const rate = completionRate(window);
+  const rate = completionRate(window, today);
   if (rate < cfg.minCompletionRate) return false;
   if (!cfg.requireImproving) return true;
   const priorWindow = records.slice(Math.max(0, records.length - cfg.window * 2), records.length - cfg.window);
   if (priorWindow.length === 0) return true; // no prior data to compare against -- don't penalize a very new habit
-  return rate > completionRate(priorWindow);
+  return rate > completionRate(priorWindow, today);
 }
 
-function isCurrentlyQuiet(records: OpportunityRecord[]): boolean {
+function isCurrentlyQuiet(records: OpportunityRecord[], today: string): boolean {
   const cfg = MOMENTUM_CONFIG.quiet;
   const window = lastN(records, cfg.window);
   if (window.length < cfg.window) return false;
-  if (window[window.length - 1].completed) return false; // no open lapse right now
-  const missedFraction = window.filter((record) => !record.completed).length / window.length;
+  const resolved = resolvedView(window, today);
+  if (resolved[resolved.length - 1].completed) return false; // no open lapse right now
+  const missedFraction = resolved.filter((record) => !record.completed).length / resolved.length;
   return missedFraction >= cfg.minMissedFraction;
 }
 
@@ -98,6 +119,7 @@ function isRecentShortRecovery(
   logs: HabitLog[],
   asOfDate: string,
   records: OpportunityRecord[],
+  today: string,
 ): boolean {
   const cfg = MOMENTUM_CONFIG.recovering;
   const window = lastN(records, cfg.window);
@@ -107,7 +129,8 @@ function isRecentShortRecovery(
     if (!windowDates.has(lapse.recoveredDate)) continue;
     if (lapse.missedOpportunityCount > cfg.maxPrecedingLapseLength) continue;
     const afterRecovery = records.filter((record) => record.date > lapse.recoveredDate);
-    if (afterRecovery.every((record) => record.completed)) return true;
+    const resolvedAfterRecovery = resolvedView(afterRecovery, today);
+    if (resolvedAfterRecovery.every((record) => record.completed)) return true;
   }
   return false;
 }
@@ -118,11 +141,13 @@ function isRebuilding(
   logs: HabitLog[],
   asOfDate: string,
   records: OpportunityRecord[],
+  today: string,
 ): boolean {
   const cfg = MOMENTUM_CONFIG.rebuilding;
   const window = lastN(records, cfg.window);
   if (window.length < cfg.window) return false;
-  if (!window[window.length - 1].completed) return false; // must currently be completing again, not still missing
+  const resolved = resolvedView(window, today);
+  if (resolved.length === 0 || !resolved[resolved.length - 1].completed) return false; // must currently be completing again, not still missing
   const windowDates = new Set(window.map((record) => record.date));
   const lapses = closedLapses(habit, periods, logs, asOfDate);
   return lapses.some((lapse) => lapse.missedOpportunityCount >= cfg.minPrecedingLapseLength && windowDates.has(lapse.recoveredDate));
@@ -146,27 +171,39 @@ function isRebuilding(
  * rebuilding" read, matching the plan's `long_term_improving_trajectory` worked example
  * (`docs/phase-2-implementation-plan.md` section 8's fixture table: confirmed sequence
  * insufficient_data -> quiet/rebuilding -> building -> steady -> thriving).
+ *
+ * `today` is the real, live current day -- distinct from `asOfDate`, which is the Scheduled
+ * Opportunity being classified and may be an earlier date than `today` when this is called as one
+ * step of `confirmedStateAt`'s walk. `records.length`/every window-size check is a scheduling fact
+ * and reaches full size the instant `asOfDate` is scheduled, regardless of completion; the
+ * evidence-inspecting helpers above (`completionRate`, `isCurrentlyQuiet`, `meetsRateWindow`,
+ * `meetsBuilding`, `isRebuilding`, `isRecentShortRecovery`) each set aside `asOfDate`'s own record
+ * when it equals `today` and is unlogged, per "today is never classified as missed" -- never for
+ * any earlier `asOfDate`, which is always a fully-resolved past fact regardless of `today`. No
+ * default: every caller must state which day is live. See docs/phase-4-completion-report.md,
+ * "Current-day design, settled: scheduling fact vs. evidence judgment" and the section below it.
  */
 export function candidateStateAt(
   habit: Habit,
   periods: HabitSchedulePeriod[],
   logs: HabitLog[],
   asOfDate: string,
+  today: string,
 ): MomentumStateKey {
   const records = recordsUpTo(habit, periods, logs, asOfDate);
 
   if (records.length < MOMENTUM_CONFIG.insufficientData.minScheduledOpportunities) return 'insufficient_data';
 
-  if (isRecentShortRecovery(habit, periods, logs, asOfDate, records)) return 'recovering';
+  if (isRecentShortRecovery(habit, periods, logs, asOfDate, records, today)) return 'recovering';
 
-  if (isCurrentlyQuiet(records)) return 'quiet';
+  if (isCurrentlyQuiet(records, today)) return 'quiet';
 
-  if (meetsRateWindow(records, MOMENTUM_CONFIG.thriving, { requireNoLapseAtAll: true })) return 'thriving';
-  if (meetsRateWindow(records, MOMENTUM_CONFIG.steady, { requireNoOpenLapse: true })) return 'steady';
+  if (meetsRateWindow(records, MOMENTUM_CONFIG.thriving, today, { requireNoLapseAtAll: true })) return 'thriving';
+  if (meetsRateWindow(records, MOMENTUM_CONFIG.steady, today, { requireNoOpenLapse: true })) return 'steady';
 
-  if (isRebuilding(habit, periods, logs, asOfDate, records)) return 'rebuilding';
+  if (isRebuilding(habit, periods, logs, asOfDate, records, today)) return 'rebuilding';
 
-  if (meetsBuilding(records)) return 'building';
+  if (meetsBuilding(records, today)) return 'building';
 
   return 'building';
 }
@@ -196,7 +233,10 @@ export function confirmedStateAt(
   today: string,
 ): MomentumStateKey {
   const opportunities = scheduledOpportunitiesUpTo(habit, periods, today);
-  const candidates = opportunities.map((date) => candidateStateAt(habit, periods, logs, date));
+  // Every walk step gets the same real `today`, not its own date as a stand-in for it -- each
+  // earlier opportunity is a resolved past fact by the time it's scanned, and only the walk's
+  // final step (date === today) can ever have a pending record to set aside.
+  const candidates = opportunities.map((date) => candidateStateAt(habit, periods, logs, date, today));
   return computeConfirmedMomentumState(candidates);
 }
 
