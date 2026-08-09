@@ -73,6 +73,8 @@ These four are ordered because `MOMENTUM_CONFIG` separates them by strictly incr
 
 Confirmation is a property of the trailing three candidates, not an accumulated pending counter. Three identical trailing candidates always confirm that state. Otherwise, when all three trailing candidates are on the chain and the current confirmed state is also on the chain, the confirmed state may be raised to the minimum rung across that window. Confirmed state may only decline via three identical candidates. A pending-counter formulation was tried and rejected because it delayed every upward transition by roughly one confirmation cycle and broke the locked fixture timings.
 
+**Positive-family evidence floor (approved, implemented).** `recovering`/`rebuilding` — both require the window's most recent opportunity to be a completion — are credited at the chain's weakest rung (`building`) for the raise calculation only, never exposed as a general rank, never compared to `quiet` or to each other. A window containing one of them can therefore raise the confirmed state to `building` at most, never higher. `quiet` is untouched and still blocks the raise outright whenever it appears in the window. See `docs/phase-4-completion-report.md`'s "Confirmation-mechanism blocker resolved" section for the ruling and its exhaustive verification.
+
 When reporting any monotonicity, reachability, or behavioural inconsistency, always classify it on two axes:
 
 - ordered-chain vs unrankable pair
@@ -82,7 +84,7 @@ A candidate-level issue indicates a contradiction in `candidateStateAt`. A confi
 
 The behavioural fixtures in `docs/phase-2-implementation-plan.md` §8 are behavioural contracts, not implementation suggestions. If a proposed change alters a locked fixture, its explicitly specified transition timing, or any other behaviour that the approved specification marks as contractual, stop and report the contradiction. Do not resolve it by editing fixture expectations without explicit approval.
 
-**The trailing-window confirmation mechanism is not architecturally settled.** Two open product decisions are recorded in `docs/phase-4-completion-report.md`'s "Open product decisions blocking Phase 5" section — do not treat the current mechanism as a fixed foundation for new work until they're resolved there.
+**The trailing-window confirmation mechanism is not fully architecturally settled.** One open product decision remains, recorded in `docs/phase-4-completion-report.md`'s "Open product decisions blocking Phase 5" section (the positive-family evidence floor above was the other; it's resolved) — do not treat the trapped-`insufficient_data` question as settled until it's resolved there.
 
 **The confirmation boundary, not window size, decides what is a Momentum State.** Hysteresis exists in exactly one place — `computeConfirmedMomentumState`'s fold over `candidateStateAt`'s output — and nowhere else in the domain layer. Any behavioural signal that does not pass through that fold (`recoveryRate`, `averageRecoveryTime`, `totalCompletions`, `streakForHabit`, `consistency`, etc.) is a single-pass stateless computation and is not a Momentum State, regardless of how volatile it is or how it's surfaced. See "Rhythm: an eighth Momentum State investigated and rejected" in `docs/phase-4-completion-report.md` for the full reasoning.
 

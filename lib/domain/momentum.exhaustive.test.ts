@@ -106,8 +106,17 @@ describe('required transition sequences (direct computeConfirmedMomentumState ca
     expect(computeConfirmedMomentumState(['insufficient_data', 'building', 'thriving'])).toBe('insufficient_data');
   });
 
-  it('building, recovering, building: an off-chain state interrupting a run breaks it, no bridging', () => {
-    expect(computeConfirmedMomentumState(['building', 'recovering', 'building'])).toBe('insufficient_data');
+  it('building, recovering, building: the positive-family evidence floor now bridges this, credited at building', () => {
+    // Pre-floor behaviour (superseded -- see docs/phase-4-completion-report.md's "Confirmation-
+    // mechanism blocker" and its resolution): recovering had no rank at all, so this window failed
+    // chain-comparability outright and confirmed stayed at insufficient_data ("no bridging"). The
+    // approved floor credits a positive-family off-chain candidate (recovering/rebuilding) as
+    // affirmative evidence at the chain's weakest rung for Rule 2's minimum calculation only --
+    // closing a lapse is not "an absence of evidence interrupting a run," it's evidence at least as
+    // strong as building's own bar. All three window members now resolve to building's rank, so
+    // confirmed raises to building. See the "positive-family evidence floor" describe block below
+    // for the floor's exhaustive verification.
+    expect(computeConfirmedMomentumState(['building', 'recovering', 'building'])).toBe('building');
   });
 
   it('building, building, insufficient_data, building: a downward move restarts the count', () => {
@@ -194,10 +203,75 @@ describe('exhaustive: all 7 MomentumStateKey values remain reachable as a confir
     }
 
     // Witnesses recorded here, unchanged from the pre-hysteresis-fix search (see the completion
-    // report): rebuilding's shortest witness is still the 7-day '0000111' pattern.
+    // report): rebuilding's shortest witness is still the 7-day '0000111' pattern. Re-run again,
+    // unmodified, after the positive-family evidence floor (below) -- still unchanged, proving the
+    // floor does not reopen the rebuilding-precedence bug (Post-completion fix 2): rebuilding
+    // remains reachable as confirmed via the exact same witness, through the exact same mechanism
+    // (Rule 1's 3-identical-candidates match, which the floor never touches).
     for (const state of allStates) {
       expect(witness[state]).toBeDefined();
     }
     expect(witness.rebuilding).toBe('0000111');
   }, 60000);
+});
+
+describe('positive-family evidence floor (Rule 2) -- approved resolution, docs/phase-4-completion-report.md "Confirmation-mechanism blocker"', () => {
+  // The two cases the floor was derived to resolve (see the completion report's "value-bearing fix,
+  // parked" writeup): min(building, building, X) = building requires X's floor rank <= building's;
+  // min(rebuilding-as-X, rebuilding-as-X, steady) != steady requires X's floor rank < steady's.
+  // building is the unique value satisfying both, which is exactly what rule2EvidenceRank assigns.
+  it('[building, building, recovering] raises confirmed to building, crediting the closed lapse as at-least-building evidence', () => {
+    expect(computeConfirmedMomentumState(['building', 'building', 'recovering'])).toBe('building');
+  });
+
+  it('[rebuilding, rebuilding, steady] raises confirmed only to building, never straight to steady off a single opportunity of steady evidence', () => {
+    expect(computeConfirmedMomentumState(['rebuilding', 'rebuilding', 'steady'])).toBe('building');
+  });
+
+  it('quiet is untouched: any window containing quiet still blocks Rule 2 entirely, regardless of the other two members', () => {
+    expect(computeConfirmedMomentumState(['thriving', 'thriving', 'quiet'])).toBe('insufficient_data');
+    expect(computeConfirmedMomentumState(['quiet', 'recovering', 'quiet'])).toBe('insufficient_data');
+  });
+
+  it('an off-chain confirmed state can still only be left via Rule 1 -- the floor never raises out of one', () => {
+    // Drive confirmed to quiet via 3 identical candidates (Rule 1, unaffected by the floor), then
+    // present windows that would raise a *chain*-confirmed state -- EVIDENCE_RANK[confirmed] is
+    // still undefined for an off-chain confirmed value regardless of the floor (the floor only ever
+    // supplies a rank for window *members*, never for `confirmed` itself), so Rule 2 stays gated
+    // off and quiet can only be left by 3 consecutive identical non-quiet candidates.
+    const sequence: MomentumStateKey[] = ['quiet', 'quiet', 'quiet', 'rebuilding', 'rebuilding', 'steady'];
+    expect(computeConfirmedMomentumState(sequence)).toBe('quiet');
+  });
+
+  it('exhaustive: no window containing recovering or rebuilding can raise confirmed above building, over every 3-candidate window drawn from all 7 states', () => {
+    const allStates: MomentumStateKey[] = [
+      'insufficient_data',
+      'building',
+      'steady',
+      'recovering',
+      'rebuilding',
+      'thriving',
+      'quiet',
+    ];
+    let checked = 0;
+    for (const a of allStates) {
+      for (const b of allStates) {
+        for (const c of allStates) {
+          const window: MomentumStateKey[] = [a, b, c];
+          if (!window.includes('recovering') && !window.includes('rebuilding')) continue;
+          // Rule 1 (3 identical candidates) can still confirm recovering/rebuilding/quiet directly
+          // -- unaffected by the floor, and not what this check is about.
+          if (window.every((s) => s === window[0])) continue;
+
+          checked += 1;
+          const result = computeConfirmedMomentumState(window);
+          const rank = CHAIN_RANK[result];
+          // Either the result is off-chain (Rule 2 never fired -- e.g. quiet also present), or its
+          // rank is at or below building's -- never steady or thriving off a floor-contributed window.
+          expect(rank === undefined || rank <= (CHAIN_RANK.building as number)).toBe(true);
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
 });

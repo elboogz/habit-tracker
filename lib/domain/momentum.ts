@@ -216,6 +216,37 @@ const EVIDENCE_RANK: Partial<Record<MomentumStateKey, number>> = Object.fromEntr
 );
 
 /**
+ * The positive-family evidence floor (approved -- see docs/phase-4-completion-report.md's
+ * "Confirmation-mechanism blocker" section and its resolution). Rule 2 below needs a per-candidate
+ * rank to take a window minimum over; `EVIDENCE_RANK` alone leaves `recovering`/`rebuilding`/`quiet`
+ * undefined, which is why a window containing any of them has always failed Rule 2's
+ * chain-comparability check entirely (Rule 3, retain).
+ *
+ * `recovering` and `rebuilding` are positive-family: both require, by their own `candidateStateAt`
+ * definition (`isRecentShortRecovery`, `isRebuilding`), that the window's most recent opportunity
+ * was itself a completion -- closing a lapse is affirmative evidence, not an absence of it. This
+ * floor gives Rule 2's minimum calculation a value for them: the chain's weakest rung
+ * (`EVIDENCE_RANK.building`), and no more. It orders nothing: it draws no distinction between
+ * `recovering` and `rebuilding` (both map to the identical floor value), and it says nothing about
+ * either relative to any chain state beyond that one fixed value -- a window containing one can
+ * never raise the confirmed state past `building` (Math.min can never exceed the floor value once
+ * any window member contributes it), regardless of how strong the window's other members are.
+ * `quiet` (negative-family -- requires the window's most recent opportunity to be a miss) is
+ * deliberately untouched: it has no entry here, so it continues to make `window.every(...)` fail
+ * and block Rule 2 outright whenever it appears, exactly as before this floor existed.
+ *
+ * This is a *narrower* rank than `EVIDENCE_RANK`, used only inside Rule 2's minimum calculation --
+ * never exported, never merged into `EVIDENCE_RANK` itself, and never used to decide whether
+ * `confirmed` (the current confirmed state) is chain-comparable: that check still reads
+ * `EVIDENCE_RANK[confirmed]` directly, so an off-chain confirmed state (`quiet`/`recovering`/
+ * `rebuilding`) still can only ever be left via Rule 1's exact-match rule, unchanged.
+ */
+function rule2EvidenceRank(state: MomentumStateKey): number | undefined {
+  if (state === 'recovering' || state === 'rebuilding') return EVIDENCE_RANK.building;
+  return EVIDENCE_RANK[state];
+}
+
+/**
  * Momentum-specific hysteresis. Fixes a real gap in the generic `computeConfirmedState` below --
  * found by the exhaustive today-open-vs-today-completed monotonicity search over the
  * `insufficient_data < building < steady < thriving` chain (0 violations at the candidate level,
@@ -248,12 +279,15 @@ const EVIDENCE_RANK: Partial<Record<MomentumStateKey, number>> = Object.fromEntr
  *    confirmed state to a lower rung (a decline within the chain, e.g. `thriving` -> `building`,
  *    still requires 3 consecutive identical weaker candidates -- one anomalous reading is never
  *    enough, same hysteresis protection against volatile decline as always).
- * 2. Otherwise, if every candidate in the window is chain-comparable *and* the current confirmed
- *    state is itself chain-comparable, take the minimum rank across the window. If that rank is
- *    strictly higher than the current confirmed state's rank, raise the confirmed state to it.
- *    This can only ever raise -- never lower -- and it never fires against an off-chain confirmed
- *    state (`quiet`/`recovering`/`rebuilding` can only be left via Rule 1's exact-match rule,
- *    since the approved specification gives no ordering between an off-chain state and the chain).
+ * 2. Otherwise, if every candidate in the window has a Rule 2 rank (`rule2EvidenceRank`, above --
+ *    the four chain states directly, plus `recovering`/`rebuilding` credited at the chain's weakest
+ *    rung via the approved positive-family evidence floor; `quiet` still has none) *and* the current
+ *    confirmed state is itself chain-comparable, take the minimum rank across the window. If that
+ *    rank is strictly higher than the current confirmed state's rank, raise the confirmed state to
+ *    it. This can only ever raise -- never lower -- and it never fires against an off-chain
+ *    confirmed state (`quiet`/`recovering`/`rebuilding` can only be left via Rule 1's exact-match
+ *    rule: `confirmed`'s own comparability still reads `EVIDENCE_RANK[confirmed]` directly, never
+ *    the floor, so the floor only ever supplies a rank for window *members*).
  * 3. Otherwise, the confirmed state is unchanged.
  *
  * Why this doesn't weaken the 3-opportunity confirmation requirement, and how it differs from the
@@ -272,7 +306,8 @@ const EVIDENCE_RANK: Partial<Record<MomentumStateKey, number>> = Object.fromEntr
  * `lib/domain/momentum.exhaustive.test.ts`, whose "unranked" console output and 12-day exhaustive
  * chain sweep (0 violations at both candidate and confirmed level) back the rest of this comment;
  * see docs/phase-4-completion-report.md's "Momentum confirmation mechanism" section for the full
- * writeup.
+ * writeup, and its "Confirmation-mechanism blocker resolved" section for the positive-family
+ * evidence floor's own exhaustive verification (same sweeps, re-run after the floor).
  */
 export function computeConfirmedMomentumState(candidates: MomentumStateKey[]): MomentumStateKey {
   let confirmed: MomentumStateKey = 'insufficient_data';
@@ -289,8 +324,8 @@ export function computeConfirmedMomentumState(candidates: MomentumStateKey[]): M
     }
 
     const confirmedRank = EVIDENCE_RANK[confirmed];
-    if (confirmedRank !== undefined && window.every((c) => EVIDENCE_RANK[c] !== undefined)) {
-      const windowMinRank = Math.min(...window.map((c) => EVIDENCE_RANK[c] as number));
+    if (confirmedRank !== undefined && window.every((c) => rule2EvidenceRank(c) !== undefined)) {
+      const windowMinRank = Math.min(...window.map((c) => rule2EvidenceRank(c) as number));
       if (windowMinRank > confirmedRank) {
         confirmed = EVIDENCE_CHAIN[windowMinRank];
       }
