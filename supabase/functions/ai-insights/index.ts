@@ -25,7 +25,7 @@ const KIND_CONFIG: Record<Kind, { dbKind: string; freshnessHours: number; window
 // Shared style rules: em dashes are a recognizable "AI tell" — use commas or separate sentences
 // instead. Emoji are handled by the app UI (section titles), not the body text.
 const STYLE_RULES =
-  'Write in plain, natural sentences — never use em dashes (—); use commas or split into separate ' +
+  'Write in plain, natural sentences. Never use em dashes (—); use commas or split into separate ' +
   'sentences instead. Do not include any emoji in the text. Plain text only, no markdown.';
 
 const SYSTEM_PROMPTS: Record<Kind, string> = {

@@ -439,3 +439,30 @@ The current-day Momentum fix recorded as settled-but-not-implemented in "Current
 **Full verification.** `npm test` — 10 suites, 178 tests, all passing (0 new tests added; 2 existing expected values updated in place, both flagged above). `npx tsc --noEmit` — clean. `npm run lint` — clean. `npx expo export --platform web` — bundles cleanly (1290 modules), all 15 static routes present. Working tree confirmed clean after commit.
 
 **Scope respected.** Item 2's narrative override was not implemented (the trace above shows it isn't needed for the scenario that motivated it — re-evaluation, as scoped, not construction). The second Momentum-gated coupling in `progress.tsx` (Consistency's raw-count-vs-percentage `isNew` gate) was not touched. No Momentum threshold, candidate window, the three-opportunity confirmation requirement, the trailing-window rules, the positive-family floor, Recovery semantics, or schedule semantics were changed.
+
+## Post-completion: em-dash mechanical audit, pending copy amendments
+
+A mechanical grep-and-punctuation pass over every em dash in user-facing copy (`app/(tabs)/progress.tsx`, `app/habit/[id].tsx`, `app/habit-form.tsx`, `app/(tabs)/index.tsx`, `app/onboarding.tsx`, `components/recovery-card.tsx`, both Edge Functions' prompt strings) and the AI-output sanitizer that already covers the Edge Functions at runtime (`sanitizeContent()`, both `supabase/functions/*/index.ts`). Punctuation-only fixes (comma/colon/full stop, no rewording) were applied and verified (`npm test` 178/178, `tsc --noEmit` clean, `npm run lint` clean). Three items came out of that pass that are recorded here rather than actioned, per instruction.
+
+### Em-dash coverage test: design recorded, not built
+
+A future Jest test asserting no em dash appears in user-facing string/template literals. Refinements to the original proposal, recorded before building it:
+
+1. **Discovery: glob over `app/` and `components/`, not a fixed file list.** A fixed list guards against a covered file silently *leaving* the check, but it equally lets a new file silently never *join* it — the likelier failure mode across several more phases of screen additions. The test should assert the discovered file list is non-empty (so a broken glob fails loudly rather than silently checking zero files) and should consider snapshotting the covered file count, so an unexpected drop (a file renamed out of the glob's pattern, a directory restructure) also fails instead of passing vacuously.
+2. **Character-naming exemption: allowlist by exact match on the specific `STYLE_RULES` literal, not by "contains `(—)`".** A substring-based allowlist would let a real, unrelated em dash pass anywhere inside a string that happens to also contain the parenthesised form elsewhere. Matching the exact literal closes that gap.
+3. **Rule 1 of the copy variation contract (`CLAUDE.md`) is equally greppable, and the same infrastructure would cover it.** The prohibited-framings list (protecting, breaking, losing, keeping alive, getting back on track, streak language, absence day-counts, "don't") is enforceable by grep exactly as the em-dash rule is. `app/(tabs)/index.tsx`'s challenge banner ("keep your run alive" — see below) is direct evidence that manual review alone does not catch these; a shared test covering both checks is worth building together rather than separately.
+
+Not built in this pass.
+
+### Pending amendments, batched, not applied
+
+- **`recovering`'s narrative punctuation** (`app/(tabs)/progress.tsx`, `"You're finding your way back — that's the part that counts."`) is left unchanged because it matches the locked wording in `docs/phase-3-experience-plan.md`'s §7.1 table exactly — a punctuation swap here is a spec amendment, not a mechanical fix, and needs the same approval path as any other locked-copy change.
+- It will be batched into one amendment together with the `steady` and `rebuilding` narrative changes already pending (tracked outside this document).
+- **A narrow exemption to the em-dash rule in `CLAUDE.md`**, for text that names the em dash character in order to prohibit it (`supabase/functions/*/index.ts`'s `STYLE_RULES` string, which must contain a literal `(—)` for the instruction to Claude to be legible). `CLAUDE.md` was not edited.
+
+### Additional copy findings flagged during the audit, not fixed
+
+Surfaced while fixing the em-dash punctuation on the same lines; the punctuation fix was applied, the flagged content was not touched.
+
+- **`app/(tabs)/index.tsx`'s challenge banner** ("...log them all today to keep your run alive") uses "keep... alive," a prohibited loss-framing under Rule 1 of the copy variation contract (`CLAUDE.md`). The em-dash fix on this line does not address it.
+- **`app/(tabs)/progress.tsx`'s "No data yet" empty state and `app/onboarding.tsx`'s "Track your progress" feature row** both explicitly contrast the product against streaks ("not just whether you kept a streak, but..."). Not prohibited by any existing rule, but flagged for a product decision on whether streak-contrast belongs on Progress at all.

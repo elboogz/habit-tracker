@@ -331,7 +331,7 @@ export default function ProgressScreen() {
               <ThemedText style={{ fontSize: 32 }}>📊</ThemedText>
               <ThemedText type="defaultSemiBold">No data yet</ThemedText>
               <ThemedText style={{ color: colors.icon, textAlign: 'center' }}>
-                Once you start logging on the Today tab, you&apos;ll see how you&apos;re really doing here — not just
+                Once you start logging on the Today tab, you&apos;ll see how you&apos;re really doing here, not just
                 whether you kept a streak, but how you come back after a day off.
               </ThemedText>
             </ThemedView>

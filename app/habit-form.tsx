@@ -182,7 +182,7 @@ export default function HabitFormScreen() {
             </ThemedView>
             <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
               {type === 'simple'
-                ? 'Did you do it today — yes or no. Good for reading, meditating, journaling.'
+                ? 'Did you do it today: yes or no. Good for reading, meditating, journaling.'
                 : 'Track repetitions toward a daily target. Good for water, push-ups, pages.'}
             </ThemedText>
           </ThemedView>
@@ -212,7 +212,7 @@ export default function HabitFormScreen() {
             <ThemedView style={styles.section}>
               <ThemedText type="defaultSemiBold">Smaller version</ThemedText>
               <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
-                What the recovery card’s “Do a smaller version” logs on a tough day — a lighter target that still counts as done.
+                What the recovery card’s “Do a smaller version” logs on a tough day, a lighter target that still counts as done.
               </ThemedText>
               <ThemedView style={styles.stepperRow}>
                 <Pressable
@@ -276,7 +276,7 @@ export default function HabitFormScreen() {
               </ThemedView>
               {hasActiveChallenge && (
                 <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
-                  This habit has an active challenge — schedule changes apply from today onward and never rewrite past days.
+                  This habit has an active challenge. Schedule changes apply from today onward and never rewrite past days.
                 </ThemedText>
               )}
             </ThemedView>
@@ -284,7 +284,7 @@ export default function HabitFormScreen() {
 
           {isEditing && hasActiveChallenge && (
             <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
-              This habit has an active challenge — finish or let it run its course before editing its type.
+              This habit has an active challenge. Finish or let it run its course before editing its type.
             </ThemedText>
           )}
 

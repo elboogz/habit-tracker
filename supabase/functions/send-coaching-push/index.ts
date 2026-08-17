@@ -14,7 +14,7 @@ const NUDGE_WINDOW_DAYS = 14;
 // Duplicated from ai-insights/index.ts rather than shared -- paste-in Edge Functions are deployed
 // independently and don't share a module system.
 const STYLE_RULES =
-  'Write in plain, natural sentences — never use em dashes (—); use commas or split into separate ' +
+  'Write in plain, natural sentences. Never use em dashes (—); use commas or split into separate ' +
   'sentences instead. Do not include any emoji in the text. Plain text only, no markdown.';
 
 const NUDGE_SYSTEM_PROMPT =

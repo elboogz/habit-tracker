@@ -42,8 +42,8 @@ export default function OnboardingScreen() {
   const challengeLabel = habitsToCreate.map((habit) => `${habit.emoji} ${habit.name}`).join(', ');
   const challengeBody =
     habitsToCreate.length > 1
-      ? `Three days in a row of all of: ${challengeLabel} — that's the challenge. Complete every one of them each day and you'll get a celebration worth showing off.`
-      : `Three days in a row of "${challengeLabel}" — that's the challenge. Finish it and you'll get a celebration worth showing off.`;
+      ? `Three days in a row of all of: ${challengeLabel}. That's the challenge. Complete every one of them each day and you'll get a celebration worth showing off.`
+      : `Three days in a row of "${challengeLabel}". That's the challenge. Finish it and you'll get a celebration worth showing off.`;
 
   function toggleSuggestion(suggestion: Suggestion) {
     setSelected((current) =>
@@ -82,7 +82,7 @@ export default function OnboardingScreen() {
           <Step
             emoji="🌱"
             title="Build habits that stick"
-            body="Create a habit, track it daily, and get an instant reward — a burst of celebration, a buzz, and a chime — every single time."
+            body="Create a habit, track it daily, and get an instant reward: a burst of celebration, a buzz, and a chime, every single time."
             primary="Let's go"
             onPrimary={() => setStep(1)}
             colors={colors}
@@ -97,7 +97,7 @@ export default function OnboardingScreen() {
                 <FeatureRow
                   emoji="✅"
                   title="Create & track"
-                  body="Add a habit — yes/no or a daily count — and log it with one tap."
+                  body="Add a habit, yes/no or a daily count, and log it with one tap."
                   colors={colors}
                 />
                 <FeatureRow
@@ -109,13 +109,13 @@ export default function OnboardingScreen() {
                 <FeatureRow
                   emoji="📊"
                   title="Track your progress"
-                  body="See how you're really doing over time — not just whether you kept a streak, but how you come back after a day off."
+                  body="See how you're really doing over time, not just whether you kept a streak, but how you come back after a day off."
                   colors={colors}
                 />
                 <FeatureRow
                   emoji="🔔"
                   title="Stay reminded"
-                  body="Turn on daily nudges — at the times you choose, even per habit — so you never forget to check in."
+                  body="Turn on daily nudges: at the times you choose, even per habit, so you never forget to check in."
                   colors={colors}
                 />
               </ThemedView>
@@ -129,7 +129,7 @@ export default function OnboardingScreen() {
             <ThemedView style={{ gap: 6 }}>
               <ThemedText type="title">Pick your habits</ThemedText>
               <ThemedText style={{ color: colors.icon }}>
-                Choose one or more to start with — you can always add more later.
+                Choose one or more to start with. You can always add more later.
               </ThemedText>
             </ThemedView>
             <ThemedView style={styles.choices}>
@@ -208,7 +208,7 @@ export default function OnboardingScreen() {
             <ThemedView style={{ gap: 6 }}>
               <ThemedText type="title">Stay on track</ThemedText>
               <ThemedText style={{ color: colors.icon }}>
-                A daily nudge around 9:00 AM helps the habit stick — especially for the next three days. You can
+                A daily nudge around 9:00 AM helps the habit stick, especially for the next three days. You can
                 change this anytime in Settings.
               </ThemedText>
             </ThemedView>

@@ -152,7 +152,7 @@ export default function HabitDetailScreen() {
           <ThemedView style={styles.section}>
             <ThemedText type="defaultSemiBold">Recent activity</ThemedText>
             {recentLogs.length === 0 ? (
-              <ThemedText style={{ color: colors.icon }}>Nothing logged yet — get started on the Today tab.</ThemedText>
+              <ThemedText style={{ color: colors.icon }}>Nothing logged yet. Get started on the Today tab.</ThemedText>
             ) : (
               <ThemedView style={{ gap: 8 }}>
                 {recentLogs.map((log) => (

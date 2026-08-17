@@ -197,12 +197,12 @@ export default function TodayScreen() {
 
     if (!nowDone) {
       const count = countForDay(nextLogs, habit.id, today);
-      fire(habit.emoji, `${count} of ${habit.targetCount} today — keep going!`);
+      fire(habit.emoji, `${count} of ${habit.targetCount} today, keep going!`);
       return;
     }
 
     if (wasDoneToday) {
-      fire(habit.emoji, 'Bonus rep — nice!');
+      fire(habit.emoji, 'Bonus rep, nice!');
       return;
     }
 
@@ -220,9 +220,9 @@ export default function TodayScreen() {
       }
       if (progress.todayDone) {
         if (justCompletedAllHabits) {
-          fire('🎉', "All habits done for today — you're crushing it!", true);
+          fire('🎉', "All habits done for today, you're crushing it!", true);
         } else {
-          fire('🚩', `Day ${progress.daysElapsed} of ${progress.totalDays} — challenge on track!`);
+          fire('🚩', `Day ${progress.daysElapsed} of ${progress.totalDays}, challenge on track!`);
         }
         return;
       }
@@ -232,7 +232,7 @@ export default function TodayScreen() {
     }
 
     if (justCompletedAllHabits) {
-      fire('🎉', "All habits done for today — you're crushing it!", true);
+      fire('🎉', "All habits done for today, you're crushing it!", true);
       return;
     }
 
@@ -299,8 +299,8 @@ export default function TodayScreen() {
                       </ThemedText>
                       <ThemedText style={{ color: colors.icon, fontSize: 14 }}>
                         {progress.habits.map((h) => h.emoji).join(' ')}{' '}
-                        {progress.habits.length === 1 ? progress.habits[0].name : `${progress.habits.length} habits`}{' '}
-                        — {progress.todayDone ? "today's set is locked in" : 'log them all today to keep your run alive'}
+                        {progress.habits.length === 1 ? progress.habits[0].name : `${progress.habits.length} habits`}
+                        , {progress.todayDone ? "today's set is locked in" : 'log them all today to keep your run alive'}
                       </ThemedText>
                     </ThemedView>
                   </Pressable>
