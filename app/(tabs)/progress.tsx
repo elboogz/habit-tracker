@@ -63,12 +63,7 @@ function recoveryRateText(result: RecoveryRateResult): string {
   return `${Math.round((result.rate ?? 0) * 100)}%`;
 }
 
-function consistencyText(habit: Habit, logs: HabitLog[], days: number, showRawCount: boolean): string {
-  if (showRawCount) {
-    const history = recentHistory(habit, logs, days);
-    const done = history.filter((entry) => entry.done).length;
-    return `${done} of ${history.length} days`;
-  }
+function consistencyText(habit: Habit, logs: HabitLog[], days: number): string {
   return `${Math.round(consistency(habit, logs, days) * 100)}%`;
 }
 
@@ -296,8 +291,7 @@ export default function ProgressScreen() {
           <ThemedView style={styles.list}>
             {habits.map((habit) => {
               const history = recentHistory(habit, logs, days);
-              const isNew = confirmedStateAt(habit, schedulePeriods, logs, today) === 'insufficient_data';
-              const habitConsistencyText = consistencyText(habit, logs, days, isNew);
+              const habitConsistencyText = consistencyText(habit, logs, days);
 
               return (
                 <Pressable
