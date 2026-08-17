@@ -1,5 +1,5 @@
 import type { Habit, HabitSchedulePeriod, ScheduleDays } from '../habit-types';
-import { addDays, localDayKeyOf, parseDayKeyParts, weekdayOf } from './day-key';
+import { addDays, dayKey, localDayKeyOf, parseDayKeyParts, weekdayOf } from './day-key';
 
 export type { HabitSchedulePeriod, ScheduleDays } from '../habit-types';
 // Re-exported so existing imports of these from './schedule' (this module's own test file, and
@@ -80,6 +80,28 @@ export function scheduledOpportunitiesUpTo(
   while (cursor !== undefined && cursor <= today) {
     if (isScheduledOpportunity(periods, habit, cursor)) result.push(cursor);
     cursor = addDays(cursor, 1);
+  }
+  return result;
+}
+
+/**
+ * Every Scheduled Opportunity date for `habit` within the trailing `days`-day window ending
+ * `asOfDate` (inclusive), ascending -- the windowed counterpart to scheduledOpportunitiesUpTo.
+ * Deliberately O(days), not O(habit age): walks only the requested window rather than the
+ * habit's full lifetime, since Consistency (this function's motivating caller) is computed
+ * several times per Progress render and a lifetime walk would make a small-window question cost
+ * proportional to how old the habit is.
+ */
+export function scheduledOpportunitiesInWindow(
+  habit: Habit,
+  periods: HabitSchedulePeriod[],
+  days: number,
+  asOfDate: string = dayKey(),
+): string[] {
+  const result: string[] = [];
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const date = addDays(asOfDate, -i);
+    if (isScheduledOpportunity(periods, habit, date)) result.push(date);
   }
   return result;
 }

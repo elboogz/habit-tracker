@@ -1,6 +1,6 @@
 import type { Challenge, Habit, HabitLog, HabitSchedulePeriod } from '../habit-types';
 import { addDays, dayKey, daysBetween } from './day-key';
-import { isScheduledOpportunity } from './schedule';
+import { isScheduledOpportunity, scheduledOpportunitiesInWindow } from './schedule';
 
 // Re-exported so existing `@/lib/habit-stats` imports of dayKey/addDays (via the barrel) keep
 // working unchanged -- day-key.ts is the canonical home now that schedule.ts needs these too,
@@ -115,8 +115,45 @@ export function recentHistory(habit: Habit, logs: HabitLog[], days: number, asOf
   return result;
 }
 
-/** Fraction (0-1) of the last `days` days (ending `asOfDate`) the habit was completed. */
-export function consistency(habit: Habit, logs: HabitLog[], days: number, asOfDate: string = dayKey()): number {
+/**
+ * Fraction (0-1) of Scheduled Opportunities in the last `days` days (ending `asOfDate`) the habit
+ * was completed, or `null` if the window contains no Scheduled Opportunities at all. `null` is a
+ * distinct claim from `0`: "not yet asked" is not the same statement as "asked and missed every
+ * time," so a window with nothing to evaluate returns no percentage rather than a false zero.
+ *
+ * Per docs/habit-tracker-evolution-plan.md's Scheduled Opportunity principle ("every progress
+ * calculation throughout the application must be based on scheduled opportunities rather than
+ * calendar days," naming Consistency first in that list): measures adherence to what the habit's
+ * own schedule actually offered in the window, not raw calendar days regardless of whether the
+ * habit was ever asking for them that day. Deliberately does not reuse recentHistory -- that stays
+ * calendar-based (it powers the heatmap/calendar, where every calendar day is a legitimate visual
+ * artefact) and answers a different question than this function does.
+ */
+export function consistency(
+  habit: Habit,
+  logs: HabitLog[],
+  days: number,
+  schedulePeriods: HabitSchedulePeriod[],
+  asOfDate: string = dayKey(),
+): number | null {
+  const opportunities = scheduledOpportunitiesInWindow(habit, schedulePeriods, days, asOfDate);
+  if (opportunities.length === 0) return null;
+  const doneCount = opportunities.filter((date) => isDoneOnDay(habit, logs, date)).length;
+  return doneCount / opportunities.length;
+}
+
+/**
+ * Calendar-day consistency -- `consistency`'s pre-Scheduled-Opportunity behavior, preserved
+ * verbatim under an honest name. Exists only so scripts/build-edge-functions.js's generated block
+ * (see the SOURCES list there) can keep inlining a function the two Edge Functions actually call
+ * (send-coaching-push's push eligibility, ai-insights' consistencyPct) without silently changing
+ * their behavior: neither Edge Function fetches habit_schedule_periods today, so they cannot call
+ * the schedule-aware consistency() above without a separate, deliberate change (extending the
+ * generated-domain whitelist to include schedule.ts, plus a new DB read -- see the completion
+ * report for the open questions that change is gated on). Not used by any client screen -- every
+ * client call site reads the schedule-aware consistency() instead.
+ */
+export function calendarConsistency(habit: Habit, logs: HabitLog[], days: number, asOfDate: string = dayKey()): number {
   const history = recentHistory(habit, logs, days, asOfDate);
   const doneCount = history.filter((entry) => entry.done).length;
   return history.length === 0 ? 0 : doneCount / history.length;

@@ -121,8 +121,18 @@ function recentHistory(habit: Habit, logs: HabitLog[], days: number, asOfDate: s
   return result;
 }
 
-/** Fraction (0-1) of the last `days` days (ending `asOfDate`) the habit was completed. */
-function consistency(habit: Habit, logs: HabitLog[], days: number, asOfDate: string = dayKey()): number {
+/**
+ * Calendar-day consistency -- `consistency`'s pre-Scheduled-Opportunity behavior, preserved
+ * verbatim under an honest name. Exists only so scripts/build-edge-functions.js's generated block
+ * (see the SOURCES list there) can keep inlining a function the two Edge Functions actually call
+ * (send-coaching-push's push eligibility, ai-insights' consistencyPct) without silently changing
+ * their behavior: neither Edge Function fetches habit_schedule_periods today, so they cannot call
+ * the schedule-aware consistency() above without a separate, deliberate change (extending the
+ * generated-domain whitelist to include schedule.ts, plus a new DB read -- see the completion
+ * report for the open questions that change is gated on). Not used by any client screen -- every
+ * client call site reads the schedule-aware consistency() instead.
+ */
+function calendarConsistency(habit: Habit, logs: HabitLog[], days: number, asOfDate: string = dayKey()): number {
   const history = recentHistory(habit, logs, days, asOfDate);
   const doneCount = history.filter((entry) => entry.done).length;
   return history.length === 0 ? 0 : doneCount / history.length;
@@ -273,7 +283,7 @@ Deno.serve(async (req) => {
       name: habit.name,
       emoji: habit.emoji,
       streakDays: streakForHabit(toDomainHabit(habit), toDomainLogs(logs ?? [])),
-      consistencyPct: Math.round(consistency(toDomainHabit(habit), toDomainLogs(logs ?? []), config.windowDays) * 100),
+      consistencyPct: Math.round(calendarConsistency(toDomainHabit(habit), toDomainLogs(logs ?? []), config.windowDays) * 100),
     }));
 
     const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY') });

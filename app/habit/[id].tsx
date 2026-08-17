@@ -69,7 +69,8 @@ export default function HabitDetailScreen() {
   const best = longestStreak(habit, state.logs);
   const history = recentHistory(habit, state.logs, HISTORY_DAYS);
   const total = totalCompletions(habit.id, state.logs);
-  const habitConsistency = Math.round(consistency(habit, state.logs, HISTORY_DAYS) * 100);
+  const rawConsistency = consistency(habit, state.logs, HISTORY_DAYS, state.schedulePeriods);
+  const habitConsistency = rawConsistency === null ? null : Math.round(rawConsistency * 100);
   const today = dayKey();
   const rate = recoveryRate(habit, state.schedulePeriods, state.logs, today);
   const avgRecoveryDays = averageRecoveryTime(habit, state.schedulePeriods, state.logs, today);
@@ -116,13 +117,15 @@ export default function HabitDetailScreen() {
                 <ThemedText style={{ color: colors.icon, fontSize: 13 }}>{recoveryTile.label}</ThemedText>
               </ThemedView>
             )}
-            <ThemedView style={[styles.statCard, { borderColor: colors.icon }]}>
-              <ThemedText style={styles.statEmoji}>📈</ThemedText>
-              <ThemedText type="title" style={{ fontSize: 28 }}>
-                {habitConsistency}%
-              </ThemedText>
-              <ThemedText style={{ color: colors.icon, fontSize: 13 }}>last {HISTORY_DAYS} days</ThemedText>
-            </ThemedView>
+            {habitConsistency !== null && (
+              <ThemedView style={[styles.statCard, { borderColor: colors.icon }]}>
+                <ThemedText style={styles.statEmoji}>📈</ThemedText>
+                <ThemedText type="title" style={{ fontSize: 28 }}>
+                  {habitConsistency}%
+                </ThemedText>
+                <ThemedText style={{ color: colors.icon, fontSize: 13 }}>last {HISTORY_DAYS} days</ThemedText>
+              </ThemedView>
+            )}
           </ThemedView>
 
           <ThemedView style={styles.section}>

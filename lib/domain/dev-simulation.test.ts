@@ -111,16 +111,25 @@ describe('simulated history is behaviorally equivalent to genuine history', () =
   it('a genuinely 30-day-old habit with this history is not insufficient_data and reflects 12/14 recent days', () => {
     const genuine = habit({ createdAt: `${allDates[0]}T09:00:00.000Z` });
     const logs = buildLogs();
-    expect(consistency(genuine, logs, 14, today)).toBeCloseTo(12 / 14);
+    // Daily habit, 30 days old -- the 14-day window fully postdates creation, so schedule-aware
+    // consistency's denominator is the same 14 calendar-day-equivalent Scheduled Opportunities the
+    // old calendar-day version used. Unchanged by the schedule-aware consistency() fix.
+    expect(consistency(genuine, logs, 14, [], today)).toBeCloseTo(12 / 14);
     expect(candidateStateAt(genuine, [], logs, today, today)).not.toBe('insufficient_data');
   });
 
   it('the same logs backfilled today (bug reproduction) produce insufficient_data if createdAt is left at "today"', () => {
     const buggy = habit({ createdAt: `${today}T09:00:00.000Z` }); // debug tool's un-fixed behavior
     const logs = buildLogs();
-    // Total Completions / Consistency read raw logs by date -- unaffected by createdAt.
+    // Total Completions reads raw logs by date -- unaffected by createdAt either way.
     expect(totalCompletions('h1', logs)).toBe(completedDates.length);
-    expect(consistency(buggy, logs, 14, today)).toBeCloseTo(12 / 14);
+    // Changed: consistency() is now schedule-aware (docs/phase-4-completion-report.md, "Consistency
+    // becomes schedule-aware"), so it no longer ignores createdAt the way this test's original
+    // comment described. With createdAt pinned to "today", the 14-day window has exactly one
+    // Scheduled Opportunity (today itself), which this history has completed -- 1/1, not 12/14.
+    // This is the same createdAt-floor bug the Momentum assertion below already demonstrates,
+    // now also visible in Consistency rather than masked by it.
+    expect(consistency(buggy, logs, 14, [], today)).toBe(1);
     // But Scheduled-Opportunity-based Momentum only sees today's single opportunity -- the bug.
     expect(candidateStateAt(buggy, [], logs, today, today)).toBe('insufficient_data');
   });
@@ -135,7 +144,7 @@ describe('simulated history is behaviorally equivalent to genuine history', () =
 
     expect(candidateStateAt(fixed, [], logs, today, today)).toBe(candidateStateAt(genuine, [], logs, today, today));
     expect(confirmedStateAt(fixed, [], logs, today)).toBe(confirmedStateAt(genuine, [], logs, today));
-    expect(consistency(fixed, logs, 14, today)).toBe(consistency(genuine, logs, 14, today));
+    expect(consistency(fixed, logs, 14, [], today)).toBe(consistency(genuine, logs, 14, [], today));
     expect(totalCompletions('h1', logs)).toBe(completedDates.length);
     expect(candidateStateAt(fixed, [], logs, today, today)).not.toBe('insufficient_data');
   });

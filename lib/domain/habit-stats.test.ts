@@ -1,5 +1,6 @@
 import {
   addDays,
+  calendarConsistency,
   challengeProgress,
   consistency,
   countForDay,
@@ -199,7 +200,7 @@ describe('longestStreak', () => {
   });
 });
 
-describe('recentHistory / consistency', () => {
+describe('recentHistory', () => {
   it('returns the requested number of days, oldest first', () => {
     const habit = simpleHabit();
     const today = dayKey();
@@ -209,22 +210,95 @@ describe('recentHistory / consistency', () => {
     expect(history[2].done).toBe(true);
     expect(history[0].done).toBe(false);
   });
+});
 
+// simpleHabit() defaults to createdAt 2020-01-01 with zero schedule periods -- daily/unpaused,
+// and old enough that no window used below reaches its creation floor. For a daily habit in that
+// shape, every calendar day in the window is a Scheduled Opportunity, so the schedule-aware
+// consistency() below produces identical numbers to the old calendar-day version for these three
+// cases; only the added `schedulePeriods` argument changes. Schedule-shape-specific behavior
+// (Mon/Wed/Fri, Sundays-only, paused periods, zero opportunities) is covered separately below.
+describe('consistency (schedule-aware)', () => {
   it('computes the completed fraction over the window', () => {
     const habit = simpleHabit();
     const today = dayKey();
     const logs = [log(habit.id, today), log(habit.id, addDays(today, -1))];
-    expect(consistency(habit, logs, 4)).toBe(0.5);
+    expect(consistency(habit, logs, 4, [])).toBe(0.5);
   });
 
   it('accepts an explicit asOfDate for the same reason streakForHabit does', () => {
     const habit = simpleHabit();
     const logs = [log(habit.id, '2026-03-10'), log(habit.id, '2026-03-09')];
-    expect(consistency(habit, logs, 4, '2026-03-10')).toBe(0.5);
+    expect(consistency(habit, logs, 4, [], '2026-03-10')).toBe(0.5);
+  });
+
+  // Changed from the pre-Scheduled-Opportunity version's `toBe(0)`: a 0-day window has zero
+  // Scheduled Opportunities to evaluate, which is a "nothing to measure" case, not a "measured
+  // and got zero" case -- see consistency()'s doc comment. calendarConsistency (below) keeps the
+  // old `0` behavior for the Edge Functions that still call it.
+  it('is null for a window of 0 days -- no opportunities to evaluate, not a 0% measurement', () => {
+    expect(consistency(simpleHabit(), [], 0, [])).toBeNull();
+  });
+
+  it('excludes non-scheduled days from the denominator for a Mon/Wed/Fri habit', () => {
+    // 2026-05-01 is a Friday. Mon/Wed/Fri in the following 2 weeks: 05-01, 05-04, 05-06, 05-08,
+    // 05-11, 05-13. All six completed -- calendar-day consistency would cap around 43% (6/14);
+    // schedule-aware consistency reflects the actual perfect adherence.
+    const habit = simpleHabit({ createdAt: '2026-04-01T00:00:00.000Z' });
+    const periods = [
+      { id: 'p1', habitId: habit.id, effectiveFrom: '2026-04-01', days: [1, 3, 5], paused: false, createdAt: '2026-04-01T00:00:00.000Z', updatedAt: '2026-04-01T00:00:00.000Z' },
+    ];
+    const scheduledDates = ['2026-05-01', '2026-05-04', '2026-05-06', '2026-05-08', '2026-05-11', '2026-05-13'];
+    const logs = scheduledDates.map((date) => log(habit.id, date));
+    expect(consistency(habit, logs, 14, periods, '2026-05-14')).toBe(1);
+  });
+
+  it('excludes a paused period from both numerator and denominator', () => {
+    // Daily habit, paused for 4 days inside a 14-day window; every day outside the pause is
+    // completed. Calendar-day consistency would read 10/14 (~71%), penalizing the paused days;
+    // schedule-aware consistency excludes them from the opportunity count entirely.
+    const habit = simpleHabit({ createdAt: '2026-04-01T00:00:00.000Z' });
+    const periods = [
+      { id: 'p1', habitId: habit.id, effectiveFrom: '2026-04-01', days: 'daily' as const, paused: false, createdAt: '2026-04-01T00:00:00.000Z', updatedAt: '2026-04-01T00:00:00.000Z' },
+      { id: 'p2', habitId: habit.id, effectiveFrom: '2026-05-08', days: 'daily' as const, paused: true, createdAt: '2026-05-08T00:00:00.000Z', updatedAt: '2026-05-08T00:00:00.000Z' },
+      { id: 'p3', habitId: habit.id, effectiveFrom: '2026-05-12', days: 'daily' as const, paused: false, createdAt: '2026-05-12T00:00:00.000Z', updatedAt: '2026-05-12T00:00:00.000Z' },
+    ];
+    const today = '2026-05-14'; // window: 05-01 through 05-14; paused 05-08 through 05-11 inclusive
+    const unpausedDates = ['2026-05-01', '2026-05-02', '2026-05-03', '2026-05-04', '2026-05-05', '2026-05-06', '2026-05-07', '2026-05-12', '2026-05-13', '2026-05-14'];
+    const logs = unpausedDates.map((date) => log(habit.id, date));
+    expect(consistency(habit, logs, 14, periods, today)).toBe(1);
+  });
+
+  it('is null when the window contains zero Scheduled Opportunities (Sundays-only habit, viewed before the first Sunday)', () => {
+    // Created Monday 2026-05-04; first Sunday is 2026-05-10. Viewed on 2026-05-06 (Wednesday),
+    // the window has had no Scheduled Opportunity yet.
+    const habit = simpleHabit({ createdAt: '2026-05-04T00:00:00.000Z' });
+    const periods = [
+      { id: 'p1', habitId: habit.id, effectiveFrom: '2026-05-04', days: [0], paused: false, createdAt: '2026-05-04T00:00:00.000Z', updatedAt: '2026-05-04T00:00:00.000Z' },
+    ];
+    expect(consistency(habit, [], 7, periods, '2026-05-06')).toBeNull();
+  });
+});
+
+// The pre-Scheduled-Opportunity behavior, preserved verbatim under calendarConsistency's own name
+// -- see its doc comment in lib/domain/habit-stats.ts for why it still exists (the two Edge
+// Functions call it, and neither fetches habit_schedule_periods yet).
+describe('calendarConsistency', () => {
+  it('computes the completed fraction over the window', () => {
+    const habit = simpleHabit();
+    const today = dayKey();
+    const logs = [log(habit.id, today), log(habit.id, addDays(today, -1))];
+    expect(calendarConsistency(habit, logs, 4)).toBe(0.5);
+  });
+
+  it('accepts an explicit asOfDate for the same reason streakForHabit does', () => {
+    const habit = simpleHabit();
+    const logs = [log(habit.id, '2026-03-10'), log(habit.id, '2026-03-09')];
+    expect(calendarConsistency(habit, logs, 4, '2026-03-10')).toBe(0.5);
   });
 
   it('is 0 for a window of 0 days', () => {
-    expect(consistency(simpleHabit(), [], 0)).toBe(0);
+    expect(calendarConsistency(simpleHabit(), [], 0)).toBe(0);
   });
 });
 

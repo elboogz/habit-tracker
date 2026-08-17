@@ -63,8 +63,24 @@ function recoveryRateText(result: RecoveryRateResult): string {
   return `${Math.round((result.rate ?? 0) * 100)}%`;
 }
 
-function consistencyText(habit: Habit, logs: HabitLog[], days: number): string {
-  return `${Math.round(consistency(habit, logs, days) * 100)}%`;
+/** Null when the window contains no Scheduled Opportunities -- distinct from 0%, see consistency()'s doc comment. */
+function consistencyText(habit: Habit, logs: HabitLog[], days: number, schedulePeriods: HabitSchedulePeriod[]): string | null {
+  const value = consistency(habit, logs, days, schedulePeriods);
+  return value === null ? null : `${Math.round(value * 100)}%`;
+}
+
+/** Averages only habits with a defined Consistency in the window; null if none have one. */
+function averageConsistencyPct(
+  habits: Habit[],
+  logs: HabitLog[],
+  schedulePeriods: HabitSchedulePeriod[],
+  days: number,
+): number | null {
+  const values = habits
+    .map((habit) => consistency(habit, logs, days, schedulePeriods))
+    .filter((value): value is number => value !== null);
+  if (values.length === 0) return null;
+  return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100);
 }
 
 function HabitSnapshot({
@@ -173,10 +189,8 @@ export default function ProgressScreen() {
   // because they're plain arithmetic over already-computed per-habit domain outputs, matching this
   // screen's pre-existing overallConsistency precedent. Momentum/Recovery are shown per habit below.
   const aggregateTotalCompletions = habits.reduce((sum, habit) => sum + totalCompletions(habit.id, logs), 0);
-  const aggregateWeeklyConsistency =
-    habits.length === 0 ? 0 : Math.round((habits.reduce((sum, habit) => sum + consistency(habit, logs, 7), 0) / habits.length) * 100);
-  const aggregateMonthlyConsistency =
-    habits.length === 0 ? 0 : Math.round((habits.reduce((sum, habit) => sum + consistency(habit, logs, 30), 0) / habits.length) * 100);
+  const aggregateWeeklyConsistency = averageConsistencyPct(habits, logs, schedulePeriods, 7);
+  const aggregateMonthlyConsistency = averageConsistencyPct(habits, logs, schedulePeriods, 30);
 
   return (
     <ThemedView style={styles.container}>
@@ -194,10 +208,13 @@ export default function ProgressScreen() {
               <ThemedText type="defaultSemiBold" style={{ fontSize: 15 }}>
                 {aggregateTotalCompletions} completions logged so far
               </ThemedText>
-              <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
-                {aggregateWeeklyConsistency}% consistent this week · {aggregateMonthlyConsistency}% over the last 30
-                days
-              </ThemedText>
+              {(aggregateWeeklyConsistency !== null || aggregateMonthlyConsistency !== null) && (
+                <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
+                  {aggregateWeeklyConsistency !== null && `${aggregateWeeklyConsistency}% consistent this week`}
+                  {aggregateWeeklyConsistency !== null && aggregateMonthlyConsistency !== null && ' · '}
+                  {aggregateMonthlyConsistency !== null && `${aggregateMonthlyConsistency}% over the last 30 days`}
+                </ThemedText>
+              )}
               <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
                 See each habit below for its own momentum and recovery.
               </ThemedText>
@@ -291,7 +308,7 @@ export default function ProgressScreen() {
           <ThemedView style={styles.list}>
             {habits.map((habit) => {
               const history = recentHistory(habit, logs, days);
-              const habitConsistencyText = consistencyText(habit, logs, days);
+              const habitConsistencyText = consistencyText(habit, logs, days, schedulePeriods);
 
               return (
                 <Pressable
@@ -312,9 +329,11 @@ export default function ProgressScreen() {
                   <HabitSnapshot habit={habit} logs={logs} schedulePeriods={schedulePeriods} today={today} colors={colors} />
 
                   <HabitHeatmap history={history} fillColor={colors.tint} emptyColor={colors.icon} />
-                  <ThemedText style={{ color: colors.icon, fontSize: 12 }}>
-                    {habitConsistencyText} over the last {days} days
-                  </ThemedText>
+                  {habitConsistencyText !== null && (
+                    <ThemedText style={{ color: colors.icon, fontSize: 12 }}>
+                      {habitConsistencyText} over the last {days} days
+                    </ThemedText>
+                  )}
                 </Pressable>
               );
             })}

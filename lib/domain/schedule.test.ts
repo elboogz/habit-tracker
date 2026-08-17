@@ -8,6 +8,7 @@ import {
   parseDayKeyParts,
   retroactiveEntryWindowStart,
   scheduleForDate,
+  scheduledOpportunitiesInWindow,
   scheduledOpportunitiesUpTo,
   weekdayOf,
 } from './schedule';
@@ -163,6 +164,41 @@ describe('scheduledOpportunitiesUpTo', () => {
     // 05-01 Fri, 05-02 Sat, 05-03 Sun, 05-04 Mon, 05-05 Tue, 05-06 Wed
     const result = scheduledOpportunitiesUpTo(h, periods, '2026-05-06');
     expect(result).toEqual(['2026-05-01', '2026-05-04', '2026-05-06']);
+  });
+});
+
+describe('scheduledOpportunitiesInWindow (windowed counterpart, motivated by Consistency)', () => {
+  it('matches scheduledOpportunitiesUpTo when the window covers the habit\'s whole lifetime', () => {
+    const h = habit({ createdAt: '2026-05-01T00:00:00.000Z' }); // a Friday
+    const periods = [period({ effectiveFrom: '2026-05-01', days: [1, 3, 5] })];
+    expect(scheduledOpportunitiesInWindow(h, periods, 6, '2026-05-06')).toEqual(
+      scheduledOpportunitiesUpTo(h, periods, '2026-05-06'),
+    );
+  });
+
+  it('does not extend past a habit\'s creation date even when the window nominally would', () => {
+    const h = habit({ createdAt: '2026-05-04T00:00:00.000Z' });
+    // A 14-day window ending 2026-05-06 would nominally start 2026-04-23, well before creation.
+    expect(scheduledOpportunitiesInWindow(h, [], 14, '2026-05-06')).toEqual(['2026-05-04', '2026-05-05', '2026-05-06']);
+  });
+
+  it('is empty when the window contains zero Scheduled Opportunities', () => {
+    const h = habit({ createdAt: '2026-05-04T00:00:00.000Z' }); // a Monday
+    const periods = [period({ effectiveFrom: '2026-05-04', days: [0] })]; // Sundays only
+    // First Sunday is 2026-05-10; viewed on 2026-05-06, none have occurred yet.
+    expect(scheduledOpportunitiesInWindow(h, periods, 7, '2026-05-06')).toEqual([]);
+  });
+
+  it('excludes a paused sub-range from the window', () => {
+    const h = habit({ createdAt: '2026-05-01T00:00:00.000Z' });
+    const periods = [
+      period({ effectiveFrom: '2026-05-01', days: 'daily', paused: false }),
+      period({ id: 'p2', effectiveFrom: '2026-05-04', days: 'daily', paused: true }),
+      period({ id: 'p3', effectiveFrom: '2026-05-06', days: 'daily', paused: false }),
+    ];
+    expect(scheduledOpportunitiesInWindow(h, periods, 7, '2026-05-07')).toEqual([
+      '2026-05-01', '2026-05-02', '2026-05-03', '2026-05-06', '2026-05-07',
+    ]);
   });
 });
 
