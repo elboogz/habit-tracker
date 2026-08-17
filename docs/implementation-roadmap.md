@@ -145,6 +145,15 @@ Notification frequency reduction after repeated misses.
 
 **Reference notes (logged during pre-Phase-5 manual acceptance testing, 2026-08-08).** Competitor research (Daylio, Habitify, Me+) reinforces that notifications should eventually be context-aware rather than generic. Useful reference patterns: simple goal reminders, time-of-day context, "one habit left today" context, positive reminders after recent success, and return-oriented reminders reserved for a genuine lapse. The app's existing behavioural engine means future notification copy can be grounded in Momentum State, open lapse status, recovery, whether today's opportunity is merely still open (not yet a miss), recent completion history, and time of day — `quiet`, `recovering`, and `rebuilding` are context states, not "worse" ranks, and copy should reflect that (see CLAUDE.md's Momentum contracts). Per `docs/phase-1-audit.md` §6 and `docs/phase-4-plan.md` §11, the product must not copy streak-loss or shame framing such as "Don't lose your streak," "You've missed X for Y days," or "Get back on track." No notification changes were made in that pass — `lib/notifications.ts` is untouched; this is a reference note for whoever picks up Phase 8.
 
+State-keyed copy variation
+
+Notification copy is written as templates keyed to behavioural state rather than per habit. Each
+behavioural state carries a set of interchangeable variants, and the notification path selects one deterministically. This gives notifications that stay fresh over months while remaining truthful about the user's actual behaviour, and it removes the need to author copy per habit.
+
+Prerequisites: the notification path must receive behavioural state as data, since the Edge Functions cannot reference `momentum.ts` or `recovery.ts` under the current generated-domain boundary. Every variant set is bound by the user-facing copy variation contract in `CLAUDE.md`.
+
+The equivalent variation on the Progress card is presentation-layer work and is not part of Phase 8. It can be done independently and earlier.
+
 ---
 
 ## Phase 9 — Final QA and optimisation

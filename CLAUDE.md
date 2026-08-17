@@ -10,6 +10,27 @@ The locked product specification is at docs/habit-tracker-evolution-plan.md. All
 
 No em dashes in user-facing copy: hard-coded UI strings, AI Coach output (`supabase/functions/ai-insights/index.ts`'s prompts and any generated nudge/reflection text), documentation examples written to be pasted directly into the UI, and notification copy (`lib/notifications.ts`). This applies to text the user actually reads on-screen or in a notification — it does not apply to code comments or to this documentation's own prose. Any proposed user-facing copy containing an em dash must be rewritten before it's implemented, not shipped as-is.
 
+User-facing copy: variation contract
+Behavioural states may eventually carry several interchangeable sentences rather than one fixed sentence each, so that Progress copy and notifications stay fresh without becoming generic. Any such variation set is bound by the following rules. They apply to Progress narrative copy, notification templates, AI-generated coaching output, and reflection prompts alike.
+1. Describe what is true, never what could be lost. Every variant states a fact about the user's actual behaviour. No variant may imply that progress is fragile, that something will be forfeited by missing, or that the user is behind. This is not a matter of tone: the measurement architecture exists so that a lapse does not erase prior achievement, and loss-framed copy would reintroduce the pressure the measurement model deliberately avoids. Prohibited framings include protecting, breaking, losing, keeping alive, getting back on track, streak language, absence day-counts, and "don't". Enforceable by grep over any proposed variant set.
+2. Selection must be deterministic. Never random. Random selection repeats, and can place a wry variant immediately after an earnest one. Derive the choice from a stable seed (habit id plus day key), which gives deterministic variety and keeps output reproducible for fixture-based tests. If consecutive repetition is prohibited, enforce that explicitly rather than relying on the seed to prevent it.
+**3. Variants must be interchangeable within their state.**
+Any variant must be true whenever its state holds. If a sentence is only true under narrower
+conditions than the state itself, it does not belong in that state's set: either the condition becomes
+part of the selection logic explicitly, or the sentence is dropped. Otherwise, selection must never
+need to know more than the state.
+
+Naming a condition licenses splitting a state into sub-buckets. It does not exempt those sub-buckets
+from this rule: the interchangeability test recurses, so every variant within a named sub-bucket must
+be true whenever that narrower conjunction holds. A condition may only be used for selection if it is
+already a plain value the domain layer exposes and the screen can read. If resolving the condition
+would require new domain logic, or would require presentation code to derive a behavioural judgment of
+its own, the work starts in `lib/domain/` and must clear that bar before any copy-variation question is
+reachable.
+4. Progress-card variation and notification variation are separate features. Varying the sentence on the Progress card is presentation-layer work using mechanisms that already exist. Varying notification copy by behavioural state is Phase 8 work and additionally requires the notification path to receive state as data, since scripts/build-edge-functions.js's whitelist covers only day-key.ts and habit-stats.ts and neither Edge Function can reference momentum.ts or recovery.ts. Do not block the first on the second.
+5. Identity language is a tonal influence, not a surface. Per the locked product decision, the app is marketed and experienced as a habit tracker. Copy should not address the user as becoming a different person. Identity-based behaviour change informs register and emphasis; it is not the text.
+No em dashes in any user-facing copy, per the existing project rule. This applies to every variant.
+
 ## Commands
 
 - `npx expo start` — start the Metro dev server (scan the QR with Expo Go, or press `i`/`a`/`w` for simulator/emulator/web)
