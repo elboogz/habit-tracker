@@ -130,6 +130,41 @@ export function scheduledOpportunityFlags(
   return result;
 }
 
+/**
+ * The `count` most recent calendar dates at or before `asOfDate` matching `habitId`'s schedule
+ * PATTERN (weekday selection and pause periods, via scheduleForDate) -- deliberately excludes the
+ * creation-date floor isScheduledOpportunity/scheduledOpportunitiesInWindow apply, and deliberately
+ * takes a bare `habitId` rather than a `Habit`, so there is no `createdAt` to consult in the first
+ * place. Built for lib/domain/dev-simulation.ts's date generation (scenarioPattern, and the
+ * "+N-day streak" tool): both callers use this function's result to compute what `createdAt` OUGHT
+ * to become via backdatedCreatedAt afterward, so the creation date is an output of that pipeline,
+ * not a valid input constraint on this walk -- a habit created minutes ago must still be able to
+ * generate a multi-week-old pattern for a sparse schedule. Not a substitute for
+ * isScheduledOpportunity anywhere a real habit's actual history is being evaluated.
+ *
+ * Bounded at `maxLookbackDays` (default 366, matching nextScheduledOpportunityAfter's existing
+ * forward-search precedent) rather than an exact floor, since there is deliberately no creation
+ * date to bound against here. Generous enough that only a schedule paused for the entire lookback
+ * window could ever exhaust it, at which point returning fewer than `count` dates -- never looping
+ * unboundedly -- is the correct behaviour; callers must handle a shorter-than-requested result.
+ */
+export function recentScheduledPatternDates(
+  habitId: string,
+  periods: HabitSchedulePeriod[],
+  count: number,
+  asOfDate: string = dayKey(),
+  maxLookbackDays = 366,
+): string[] {
+  const result: string[] = [];
+  let cursor = asOfDate;
+  for (let i = 0; result.length < count && i < maxLookbackDays; i += 1) {
+    const { days, paused } = scheduleForDate(periods, habitId, cursor);
+    if (!paused && (days === 'daily' || days.includes(weekdayOf(cursor)))) result.unshift(cursor);
+    cursor = addDays(cursor, -1);
+  }
+  return result;
+}
+
 /** Number of days (today plus the days before it) the production retroactive-entry correction panel covers. */
 export const RETROACTIVE_ENTRY_WINDOW_DAYS = 7;
 

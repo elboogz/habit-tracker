@@ -14,7 +14,7 @@ import { backdatedCreatedAt, scenarioPattern, simulatedLogsFor, type ScenarioKey
 import { consistency, totalCompletions } from './habit-stats';
 import { candidateStateAt, confirmedStateAt } from './momentum';
 import { closedLapses, openLapse, recoveryEvents, recoveryRate } from './recovery';
-import { retroactiveEntryWindowStart, type HabitSchedulePeriod, scheduledOpportunitiesUpTo } from './schedule';
+import { retroactiveEntryWindowStart, type HabitSchedulePeriod, scheduledOpportunitiesUpTo, weekdayOf } from './schedule';
 
 function habit(overrides: Partial<Habit> = {}): Habit {
   return {
@@ -264,7 +264,7 @@ describe('backdatedCreatedAt never widens the retroactive-entry window past the 
   it('a scenario longer than 7 days: the fixed window still caps it, never reaching back to the scenario\'s true (earlier) start', () => {
     // missYesterday spans today-8..today (9 entries) -- longer than the window, so the window
     // itself (today-6, more recent than the backdated creation date) is the binding floor.
-    const pattern = scenarioPattern('missYesterday', today);
+    const pattern = scenarioPattern('missYesterday', 'h1', [], today);
     const windowDates = pattern.map((day) => day.date);
     const simulated = habit({ createdAt: `${today}T09:00:00.000Z` });
     const fixed = { ...simulated, createdAt: backdatedCreatedAt(simulated.createdAt, windowDates) };
@@ -278,7 +278,7 @@ describe('backdatedCreatedAt never widens the retroactive-entry window past the 
   it('a scenario shorter than 7 days: the habit\'s own (backdated) creation date is the tighter, binding floor', () => {
     // building spans today-5..today (6 entries) -- creation date is more recent than today-6, so
     // this covers the "creation date wins" branch through the real scenario pipeline.
-    const pattern = scenarioPattern('building', today);
+    const pattern = scenarioPattern('building', 'h1', [], today);
     const windowDates = pattern.map((day) => day.date);
     const simulated = habit({ createdAt: `${today}T09:00:00.000Z` });
     const fixed = { ...simulated, createdAt: backdatedCreatedAt(simulated.createdAt, windowDates) };
@@ -318,7 +318,7 @@ describe('scenario simulator produces the domain output each scenario is meant t
   const today = '2026-02-20';
 
   function applyScenario(scenario: ScenarioKey) {
-    const pattern = scenarioPattern(scenario, today);
+    const pattern = scenarioPattern(scenario, 'h1', [], today);
     const windowDates = pattern.map((day) => day.date);
     const simulated = habit({ createdAt: `${today}T09:00:00.000Z` });
     const fixed = { ...simulated, createdAt: backdatedCreatedAt(simulated.createdAt, windowDates) };
@@ -375,5 +375,43 @@ describe('scenario simulator produces the domain output each scenario is meant t
   it('thriving confirms the thriving Momentum State', () => {
     const { habit: h, logs } = applyScenario('thriving');
     expect(confirmedStateAt(h, [], logs, today)).toBe('thriving');
+  });
+});
+
+describe('scenario simulator is schedule-aware, not just daily-compatible', () => {
+  // Every case above passes [] for periods, resolving to daily/unpaused -- so none of them were
+  // ever proof the scenario simulator works for a non-daily habit. These are.
+  const today = '2026-02-20';
+  const mwf = [period({ effectiveFrom: '2020-01-01', days: [1, 3, 5] })];
+
+  it('missTwoConsecutive only ever lands on Mon/Wed/Fri dates for an MWF habit', () => {
+    const pattern = scenarioPattern('missTwoConsecutive', 'h1', mwf, today);
+    for (const day of pattern) {
+      expect([1, 3, 5]).toContain(weekdayOf(day.date));
+    }
+  });
+
+  it('missTwoConsecutive still opens the same 2-Scheduled-Opportunity lapse for an MWF habit as for a daily one', () => {
+    const pattern = scenarioPattern('missTwoConsecutive', 'h1', mwf, today);
+    const windowDates = pattern.map((day) => day.date);
+    const simulated = habit({ createdAt: `${today}T09:00:00.000Z` });
+    const fixed = { ...simulated, createdAt: backdatedCreatedAt(simulated.createdAt, windowDates) };
+    const logs = simulatedLogsFor('h1', pattern, 1, `${today}T12:00:00.000Z`);
+
+    expect(openLapse(fixed, mwf, logs, today)).toEqual({
+      habitId: 'h1',
+      firstMissedDate: pattern[7].date,
+      missedOpportunityCount: 2,
+    });
+  });
+
+  it('building still confirms the building Momentum State for an MWF habit -- the pattern\'s intent survives a non-daily schedule', () => {
+    const pattern = scenarioPattern('building', 'h1', mwf, today);
+    const windowDates = pattern.map((day) => day.date);
+    const simulated = habit({ createdAt: `${today}T09:00:00.000Z` });
+    const fixed = { ...simulated, createdAt: backdatedCreatedAt(simulated.createdAt, windowDates) };
+    const logs = simulatedLogsFor('h1', pattern, 1, `${today}T12:00:00.000Z`);
+
+    expect(confirmedStateAt(fixed, mwf, logs, today)).toBe('building');
   });
 });

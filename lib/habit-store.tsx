@@ -6,7 +6,7 @@ import { AppState } from 'react-native';
 import { useAuth } from './auth-store';
 import { addDays, challengeProgress, dayKey, reducedTargetFor } from './habit-stats';
 import { backdatedCreatedAt, scenarioPattern, simulatedLogsFor, type ScenarioKey } from './domain/dev-simulation';
-import { scheduleForDate } from './domain/schedule';
+import { scheduleForDate, scheduledOpportunitiesInWindow } from './domain/schedule';
 import type {
   Challenge,
   Habit,
@@ -242,7 +242,12 @@ function reducer(state: HabitState, action: Action): HabitState {
       for (const habit of challengeHabits) {
         const amount = habit.type === 'count' ? (habit.targetCount ?? 1) : 1;
         logs = logs.filter((log) => !(log.habitId === habit.id && pastDates.includes(log.date)));
-        const newLogs = simulatedLogsFor(habit.id, pastDates.map((date) => ({ date, completed: true })), amount, now);
+        // Filtered per habit through scheduledOpportunitiesInWindow rather than logging every
+        // calendar day in pastDates -- a habit that wasn't scheduled on a given day doesn't need a
+        // log there at all (challengeProgress's allDoneOnDay already treats a non-scheduled day as
+        // satisfied without one), and logging one anyway was exactly the bonus-completion defect.
+        const scheduledDates = scheduledOpportunitiesInWindow(habit, state.schedulePeriods, challenge.durationDays - 1, addDays(today, -1));
+        const newLogs = simulatedLogsFor(habit.id, scheduledDates.map((date) => ({ date, completed: true })), amount, now);
         logs = [...logs, ...newLogs];
       }
       const habits = state.habits.map((h) =>
@@ -277,7 +282,10 @@ function reducer(state: HabitState, action: Action): HabitState {
       for (const habit of challengeHabits) {
         const amount = habit.type === 'count' ? (habit.targetCount ?? 1) : 1;
         logs = logs.filter((log) => !(log.habitId === habit.id && allDates.includes(log.date)));
-        const newLogs = simulatedLogsFor(habit.id, allDates.map((date) => ({ date, completed: true })), amount, now);
+        // Filtered per habit through scheduledOpportunitiesInWindow -- see debugAdvanceChallenge's
+        // identical comment above.
+        const scheduledDates = scheduledOpportunitiesInWindow(habit, state.schedulePeriods, challenge.durationDays, today);
+        const newLogs = simulatedLogsFor(habit.id, scheduledDates.map((date) => ({ date, completed: true })), amount, now);
         logs = [...logs, ...newLogs];
       }
       const habits = state.habits.map((h) =>
@@ -309,7 +317,10 @@ function reducer(state: HabitState, action: Action): HabitState {
         if (action.mode === 'alternating' && index % 2 !== 0) return;
         simulatedHabitIds.add(habit.id);
         const amount = habit.type === 'count' ? (habit.targetCount ?? 1) : 1;
-        const newLogs = simulatedLogsFor(habit.id, dates.map((date) => ({ date, completed: true })), amount, now);
+        // Filtered per habit through scheduledOpportunitiesInWindow -- the 30-day window itself is
+        // unchanged (still literally "the last 30 days"), only which days inside it get a log.
+        const scheduledDates = scheduledOpportunitiesInWindow(habit, state.schedulePeriods, 30, today);
+        const newLogs = simulatedLogsFor(habit.id, scheduledDates.map((date) => ({ date, completed: true })), amount, now);
         logs = [...logs, ...newLogs];
       });
       const habits = state.habits.map((h) =>
@@ -321,7 +332,7 @@ function reducer(state: HabitState, action: Action): HabitState {
       const habit = state.habits.find((h) => h.id === action.habitId);
       if (!habit) return state;
       const now = new Date().toISOString();
-      const pattern = scenarioPattern(action.scenario, dayKey());
+      const pattern = scenarioPattern(action.scenario, action.habitId, state.schedulePeriods, dayKey());
       const windowDates = pattern.map((day) => day.date);
       const amount = habit.type === 'count' ? (habit.targetCount ?? 1) : 1;
       const filteredLogs = state.logs.filter(

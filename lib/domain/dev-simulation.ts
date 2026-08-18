@@ -11,8 +11,9 @@
 // totalCompletions/consistency (which read raw logs by calendar date, not by Scheduled
 // Opportunity) saw the full backfilled window. Same underlying data, two different effective
 // histories. Backdating createdAt to cover the simulated dates makes both readings agree.
-import type { HabitLog } from '../habit-types';
-import { addDays, localDayKeyOf, parseDayKeyParts } from './day-key';
+import type { HabitLog, HabitSchedulePeriod } from '../habit-types';
+import { localDayKeyOf, parseDayKeyParts } from './day-key';
+import { recentScheduledPatternDates } from './schedule';
 
 /**
  * The `createdAt` a habit needs so every date in `simulatedDates` falls on or after its local
@@ -108,12 +109,24 @@ const SCENARIO_PATTERNS: Record<ScenarioKey, boolean[]> = {
   thriving: [true, true, true, true, true, true, true, true, true, true],
 };
 
-/** Builds the concrete dated pattern for `scenario`, anchored so the pattern's last entry is `today`. */
-export function scenarioPattern(scenario: ScenarioKey, today: string): SimulatedDay[] {
+/**
+ * Builds the concrete dated pattern for `scenario`, anchored so the pattern's last entry is
+ * `today`. Position N from the end means the Nth most recent Scheduled Opportunity for `habitId`
+ * under `periods` (via recentScheduledPatternDates), not the Nth most recent calendar day -- for a
+ * daily/unpaused schedule the two coincide exactly, so this reduces to the prior calendar-day
+ * behaviour unchanged for every habit that predates this fix. If the schedule doesn't have enough
+ * matching dates within the lookback bound, fewer than the pattern's full length are returned,
+ * aligned to the pattern's own trailing (most recent) entries -- the oldest requested positions are
+ * the ones dropped, never the most recent ones the scenario's outcome most depends on.
+ */
+export function scenarioPattern(
+  scenario: ScenarioKey,
+  habitId: string,
+  periods: HabitSchedulePeriod[],
+  today: string,
+): SimulatedDay[] {
   const completions = SCENARIO_PATTERNS[scenario];
-  const todayIndex = completions.length - 1;
-  return completions.map((completed, index) => ({
-    date: addDays(today, index - todayIndex),
-    completed,
-  }));
+  const dates = recentScheduledPatternDates(habitId, periods, completions.length, today);
+  const offset = completions.length - dates.length;
+  return dates.map((date, i) => ({ date, completed: completions[offset + i] }));
 }

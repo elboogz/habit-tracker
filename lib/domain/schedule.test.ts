@@ -6,6 +6,7 @@ import {
   localDayKeyOf,
   nextScheduledOpportunityAfter,
   parseDayKeyParts,
+  recentScheduledPatternDates,
   retroactiveEntryWindowStart,
   scheduleForDate,
   scheduledOpportunitiesInWindow,
@@ -278,6 +279,45 @@ describe("scheduledOpportunityFlags (per-date classification for HabitCalendar's
       { date: '2026-05-06', scheduled: true },
       { date: '2026-05-07', scheduled: true },
     ]);
+  });
+});
+
+describe('recentScheduledPatternDates (schedule-pattern-only walk, no creation floor -- dev-tool date generation)', () => {
+  it('returns the N most recent consecutive calendar days for a daily/unpaused schedule (no periods)', () => {
+    expect(recentScheduledPatternDates('h1', [], 5, '2026-05-10')).toEqual([
+      '2026-05-06', '2026-05-07', '2026-05-08', '2026-05-09', '2026-05-10',
+    ]);
+  });
+
+  it('returns only Mon/Wed/Fri dates for a Mon/Wed/Fri schedule', () => {
+    const periods = [period({ effectiveFrom: '2020-01-01', days: [1, 3, 5] })];
+    // 2026-05-10 is a Sunday; walking back finds Fri 05-08, Wed 05-06, Mon 05-04.
+    expect(recentScheduledPatternDates('h1', periods, 3, '2026-05-10')).toEqual([
+      '2026-05-04', '2026-05-06', '2026-05-08',
+    ]);
+  });
+
+  it('skips a paused sub-range entirely, reaching further back to find enough matches', () => {
+    const periods = [
+      period({ effectiveFrom: '2020-01-01', days: 'daily', paused: false }),
+      period({ id: 'p2', effectiveFrom: '2026-05-08', days: 'daily', paused: true }),
+    ];
+    // Paused from 05-08 onward -- the 3 most recent non-paused days are 05-05, 05-06, 05-07.
+    expect(recentScheduledPatternDates('h1', periods, 3, '2026-05-10')).toEqual([
+      '2026-05-05', '2026-05-06', '2026-05-07',
+    ]);
+  });
+
+  it('consults no habit creation date -- unlike isScheduledOpportunity, a habitId alone is enough', () => {
+    // This function's signature doesn't even accept a Habit -- documenting the deliberate
+    // omission described in its own doc comment, not just asserting a value.
+    const periods = [period({ effectiveFrom: '2020-01-01', days: 'daily' })];
+    expect(recentScheduledPatternDates('h1', periods, 2, '2026-05-10')).toEqual(['2026-05-09', '2026-05-10']);
+  });
+
+  it('returns fewer than requested, not an infinite loop, when the schedule never matches within the lookback bound', () => {
+    const periods = [period({ effectiveFrom: '2020-01-01', days: 'daily', paused: true })];
+    expect(recentScheduledPatternDates('h1', periods, 5, '2026-05-10', 30)).toEqual([]);
   });
 });
 

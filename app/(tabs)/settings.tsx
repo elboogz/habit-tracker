@@ -13,6 +13,7 @@ import { useAuth } from '@/lib/auth-store';
 import { disableCoachPush, enableCoachPush, getCoachPushPrefs } from '@/lib/coach-push';
 import { alertMessage, confirmAction } from '@/lib/confirm';
 import type { ScenarioKey } from '@/lib/domain/dev-simulation';
+import { recentScheduledPatternDates } from '@/lib/domain/schedule';
 import { addDays, challengeProgress, dayKey } from '@/lib/habit-stats';
 import { useHabitStore } from '@/lib/habit-store';
 import { ensureNotificationPermission, notificationsSupported } from '@/lib/notifications';
@@ -223,11 +224,12 @@ export default function SettingsScreen() {
   }
 
   function handleSimulateStreak(habitId: string) {
-    const today = dayKey();
-    const dates: string[] = [];
-    for (let i = STREAK_BACKFILL_DAYS; i >= 1; i -= 1) {
-      dates.push(addDays(today, -i));
-    }
+    // The STREAK_BACKFILL_DAYS most recent Scheduled Opportunities ending yesterday (today is left
+    // for the user to log for real) -- for a daily habit this is unchanged from the prior plain
+    // addDays loop; for a non-daily habit it now spans however many calendar days that many actual
+    // Scheduled Opportunities require, rather than backfilling calendar days the habit was never
+    // asking for.
+    const dates = recentScheduledPatternDates(habitId, state.schedulePeriods, STREAK_BACKFILL_DAYS, addDays(dayKey(), -1));
     debugBackfillLogs(habitId, dates);
     setSimulatedIds((current) => new Set([...current, habitId]));
     setTimeout(() => {
