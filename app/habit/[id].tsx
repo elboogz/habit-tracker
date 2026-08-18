@@ -101,7 +101,13 @@ export default function HabitDetailScreen() {
 
           <ThemedView style={[styles.totalCard, { borderColor: colors.icon }]}>
             <ThemedText style={styles.totalEmoji}>✅</ThemedText>
-            <ThemedText type="title" style={{ fontSize: 40 }}>
+            {/* lineHeight set explicitly alongside the fontSize override: ThemedText's shared
+                `title` style pairs fontSize 32 with lineHeight 32, and this tile overrides only
+                fontSize to 40 -- left unpaired, the inherited 32 lineHeight is smaller than the
+                glyph it has to hold, which native (not web) renders as vertical clipping/overlap
+                with the emoji above. Scoped to this one override site, not ThemedText's shared
+                style, since every other title-type usage in the app is unaffected. */}
+            <ThemedText type="title" style={{ fontSize: 40, lineHeight: 48 }}>
               {total}
             </ThemedText>
             <ThemedText style={{ color: colors.icon, fontSize: 14 }}>total completions</ThemedText>
@@ -110,8 +116,15 @@ export default function HabitDetailScreen() {
           <ThemedView style={styles.statsRow}>
             <ThemedView style={[styles.statCard, { borderColor: colors.icon }]}>
               <ThemedText style={styles.statEmoji}>🔥</ThemedText>
+              {/* Two lines instead of one "Current: X · Best: Y" string: at this tile's width the
+                  combined string could wrap mid-value, stranding the separator on its own line and
+                  making this tile taller than its neighbours. Two short facts don't need a joining
+                  separator at all. */}
               <ThemedText type="title" style={{ fontSize: 22 }}>
-                Current: {streak} · Best: {best}
+                Current: {streak}
+              </ThemedText>
+              <ThemedText type="title" style={{ fontSize: 22 }}>
+                Best: {best}
               </ThemedText>
               <ThemedText style={{ color: colors.icon, fontSize: 13 }}>streak</ThemedText>
             </ThemedView>
@@ -145,6 +158,7 @@ export default function HabitDetailScreen() {
               fillColor={colors.tint}
               emptyColor={colors.icon}
               textColor={colors.text}
+              doneTextColor={colors.background}
               minEditableDate={retroactiveEntryWindowStart(habit, today)}
               onDayPress={(date) => setCorrectingDate((current) => (current === date ? null : date))}
             />

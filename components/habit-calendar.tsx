@@ -33,12 +33,21 @@ function parseDayKey(key: string): Date {
  * `isEditable`: extra completions on non-scheduled days remain a permitted, deliberate product
  * decision on both the live (Today) and retroactive (here) paths, so every day in the existing
  * editable window stays pressable regardless of `scheduled`.
+ *
+ * `doneTextColor` is a required, caller-supplied colour for a done cell's day number, rather than
+ * a hardcoded white -- white only reads correctly against `fillColor` when `fillColor` itself is
+ * dark, which doesn't hold for every theme (`constants/theme.ts`'s dark-theme tint is itself pure
+ * white, which previously made a completed cell's date invisible in dark mode). The caller's own
+ * background colour is the token already guaranteed to contrast against `fillColor` in both
+ * themes, since the app's existing design already relies on that contrast for tint to read as an
+ * accent against the screen behind it.
  */
 export function HabitCalendar({
   history,
   fillColor,
   emptyColor,
   textColor,
+  doneTextColor,
   onDayPress,
   minEditableDate,
 }: {
@@ -46,6 +55,7 @@ export function HabitCalendar({
   fillColor: string;
   emptyColor: string;
   textColor: string;
+  doneTextColor: string;
   onDayPress?: (date: string) => void;
   minEditableDate?: string;
 }) {
@@ -90,7 +100,7 @@ export function HabitCalendar({
               isEditable && { borderStyle: 'dashed' as const },
             ];
             const dayNumber = (
-              <ThemedText style={{ fontSize: 12, color: day.done ? '#fff' : isReceded ? emptyColor : textColor }}>
+              <ThemedText style={{ fontSize: 12, color: day.done ? doneTextColor : isReceded ? emptyColor : textColor }}>
                 {parseDayKey(day.date).getDate()}
               </ThemedText>
             );
