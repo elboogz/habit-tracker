@@ -126,7 +126,7 @@ export default function HabitDetailScreen() {
               <ThemedText type="title" style={{ fontSize: 22 }}>
                 Best: {best}
               </ThemedText>
-              <ThemedText style={{ color: colors.icon, fontSize: 13 }}>streak</ThemedText>
+              <ThemedText style={{ color: colors.icon, fontSize: 13 }}>scheduled days in a row</ThemedText>
             </ThemedView>
             {recoveryTile && (
               <ThemedView style={[styles.statCard, { borderColor: colors.icon }]}>

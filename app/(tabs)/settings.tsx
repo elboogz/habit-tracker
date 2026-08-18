@@ -28,7 +28,7 @@ const STREAK_BACKFILL_DAYS = 6;
 // scenarios fill in today too, for an instant Progress-screen readout.
 const SCENARIO_META: { key: ScenarioKey; label: string; mode: 'open' | 'preview' }[] = [
   { key: 'missYesterday', label: 'Miss yesterday', mode: 'open' },
-  { key: 'missTwoConsecutive', label: 'Miss 2 days', mode: 'open' },
+  { key: 'missTwoConsecutive', label: 'Miss 2 scheduled days', mode: 'open' },
   { key: 'recoverToday', label: 'Recover today', mode: 'preview' },
   { key: 'recoverAfterMultipleMisses', label: 'Recover after a lapse', mode: 'preview' },
   { key: 'quietStretch', label: 'Quiet stretch', mode: 'preview' },
@@ -466,15 +466,15 @@ export default function SettingsScreen() {
                             done && { backgroundColor: colors.tint },
                           ]}>
                           <ThemedText style={{ color: done ? colors.background : colors.tint, fontWeight: '600', fontSize: 13 }}>
-                            {done ? 'Done ✓' : `+${STREAK_BACKFILL_DAYS}-day streak`}
+                            {done ? 'Done ✓' : `+${STREAK_BACKFILL_DAYS} scheduled days`}
                           </ThemedText>
                         </Pressable>
                       </ThemedView>
                     );
                   })}
                   <ThemedText style={{ color: colors.icon, fontSize: 12, lineHeight: 17 }}>
-                    Backfills the last {STREAK_BACKFILL_DAYS} days as done (today is left for you to log), so you can
-                    check Progress streaks, best streaks, and the weekly view.
+                    Backfills the last {STREAK_BACKFILL_DAYS} scheduled days as done (today is left for you to log),
+                    so you can check the scheduled-days-in-a-row stat on Habit Detail and the weekly view.
                   </ThemedText>
                 </ThemedView>
               )}
@@ -514,7 +514,7 @@ export default function SettingsScreen() {
                     Overwrites that habit&apos;s last 7-12 days with a real, valid history (backdating its creation
                     date the same way the tools above do), so the Recovery Card, Momentum State, and Recovery Rate
                     all read it exactly as they would genuine usage — nothing is bypassed or faked. &quot;Miss
-                    yesterday&quot; and &quot;Miss 2 days&quot; leave today open so you can log the habit on the
+                    yesterday&quot; and &quot;Miss 2 scheduled days&quot; leave today open so you can log the habit on the
                     Today tab and see the real Recovery Card and celebration; the rest fill in today too, for an
                     instant Progress-screen preview of that Momentum State or recovery outcome.
                   </ThemedText>

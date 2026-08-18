@@ -128,6 +128,9 @@ Every progress calculation throughout the application must be based on scheduled
 * Notifications
 * Achievements
 * Analytics
+* Streak
+
+Streak was omitted from this list in error when it was first written. The principle above is unqualified: the app does not measure habits against calendar days, and nothing in the specification argues streak should be the exception.
 
 ### Shared Domain Concepts
 

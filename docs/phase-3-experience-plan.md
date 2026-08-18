@@ -213,10 +213,10 @@ Every label reads as a position on a journey, never a verdict. `quiet` gets the 
 |---|---|---|
 | `insufficient_data` | **Getting started** | "Still gathering enough days to show a pattern." |
 | `building` | **Building momentum** | "You're building a pattern that's starting to stick." |
-| `steady` | **Steady** | "You're keeping a steady rhythm with this." |
+| `steady` | **Steady** | "You're showing up for this one consistently." |
 | `thriving` | **Thriving** | "This habit is running strong right now." |
-| `recovering` | **Recovering** | "You're finding your way back — that's the part that counts." |
-| `rebuilding` | **Rebuilding** | "You're re-establishing this after some time away." |
+| `recovering` | **Recovering** | "You're finding your way back. That's the part that counts." |
+| `rebuilding` | **Rebuilding** | "You stepped away from this and you're building it back." |
 | `quiet` | **Quiet stretch** | "Things have been quiet here lately. Today is a good day to return." |
 
 Recommendation: adopt this table as-is. Final copywriting polish is normal Phase 3 implementation work, not a separate approval step — what needs sign-off here is that none of the seven reads as a verdict, particularly `quiet stretch` over harsher alternatives like "off track" or "struggling."

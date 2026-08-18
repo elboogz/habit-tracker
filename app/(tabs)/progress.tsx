@@ -36,7 +36,7 @@ const MOMENTUM_COPY: Record<MomentumStateKey, { badge: string; narrative: string
   },
   steady: {
     badge: 'Steady',
-    narrative: "You're keeping a steady rhythm with this.",
+    narrative: "You're showing up for this one consistently.",
   },
   thriving: {
     badge: 'Thriving',
@@ -44,11 +44,11 @@ const MOMENTUM_COPY: Record<MomentumStateKey, { badge: string; narrative: string
   },
   recovering: {
     badge: 'Recovering',
-    narrative: "You're finding your way back — that's the part that counts.",
+    narrative: "You're finding your way back. That's the part that counts.",
   },
   rebuilding: {
     badge: 'Rebuilding',
-    narrative: "You're re-establishing this after some time away.",
+    narrative: "You stepped away from this and you're building it back.",
   },
   quiet: {
     badge: 'Quiet stretch',
