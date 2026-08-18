@@ -348,6 +348,8 @@ A characterization test was added — `lib/domain/momentum.test.ts`, describe bl
 
 **Not resolved here, and not to be resolved by implementation or a new behavioural rule.** Recorded as an open product decision blocking Phase 5 (see below), independent of the confirmation-mechanism blocker. A new eighth `MomentumStateKey` was subsequently investigated as one candidate resolution and rejected on architectural grounds — see "Rhythm: an eighth Momentum State investigated and rejected" immediately below; that option is no longer live. Noted for whenever a decision is made: the remaining option under consideration is a condition-aware narrative sentence on the existing `insufficient_data` state — sharing a presentation mechanism with Item 2's already-deferred narrative override. The confirmation-mechanism work above is shaped so it doesn't foreclose that route: the parked floor rule (above) only ever affects which *state* confirms, never how a *state's copy* is derived, so a future narrative-level resolution for this item remains available regardless of how the floor's admissibility is ultimately decided.
 
+**Status: resolved 2026-08-18.** See "Trapped confirmed state: discriminator resolved" below (after the Rhythm section) for the adopted condition and what remains deferred.
+
 ### Rhythm: an eighth Momentum State investigated and rejected
 
 A signal named **Rhythm** — sustained lapse-and-return as a habit's own established pattern, evidenced by a meaningful number of resolved lapse instances with a high recovery rate and low recovery time, where the returning is the baseline rather than a deviation from one — was investigated as a candidate resolution for the trapped-`insufficient_data` item above. **An eighth `MomentumStateKey` was the working assumption partway through the investigation and was reversed.** Rhythm will not become a Momentum State. The reasoning follows, in the order it was reached.
@@ -384,14 +386,24 @@ Worked example: a habit with three 3-day lapses each resolved by the next opport
 
 **Consequence for this documentation task.** Rhythm is not added to `MomentumStateKey`, `MOMENTUM_COPY`, or any locked fixture. How, or whether, Rhythm is ever surfaced to a user is undecided and out of scope here. The trapped-`insufficient_data` item's open product decision (below) is narrowed by this outcome — a new `MomentumStateKey` is no longer one of its live options — but is not otherwise resolved.
 
+### Trapped confirmed state: discriminator resolved
+
+**The remaining option named above — a condition-aware narrative override on the existing `insufficient_data` state — is the one adopted.** Rhythm having been closed off (above), this was the only live option left, per the item's own prior framing.
+
+**Discriminator, verified exhaustively: 5 or more lifetime Scheduled Opportunities, with at least one completion among them.** This is exactly the boundary the "Coverage finding" above already established between the two structurally distinct shapes of confirmed `insufficient_data`: at 4 or fewer lifetime Scheduled Opportunities, confirmed `insufficient_data` is unconditional and genuinely means "too little data yet" — no override applies. From 5 opportunities onward with at least one completion, confirmed `insufficient_data` can only be the confirmation-mechanism trap (the Coverage finding's proof: sustaining the trap past 4 opportunities structurally requires periodic `recovering`/`rebuilding` candidates, which only fire on an actual completion — an unbroken run of misses instead escapes to confirmed `quiet` within a few opportunities) — the override applies. Below 5 opportunities, or at 5-plus with zero completions, the existing "Still gathering enough days to show a pattern" copy remains accurate and is not overridden.
+
+**Sentences are drafted, not recorded in this document.** Tracked with the other pending narrative amendments (the `recovering`/`steady`/`rebuilding` punctuation batch above) outside this document, per the same copy-approval path — consistent with the project's copy work being deliberately paused until after testers see the app.
+
+**Only implementation is deferred, to the post-tester copy pass.** The product decision itself — that an override exists, and its exact triggering condition — is settled. This item no longer blocks Phase 5.
+
 ### Open product decisions blocking Phase 5
 
-One decision remains outstanding; one is resolved:
+Both decisions are now resolved:
 
 1. ~~**Admissibility of the positive-family evidence floor.**~~ **Resolved.** Ruled admissible — see "Confirmation-mechanism blocker resolved" above for the ruling, the implementation, and its exhaustive verification (12-day monotonicity sweep, 7-state reachability witnesses including `rebuilding`'s unchanged, a dedicated 216-window exhaustive sweep of the floor's own bound). The three-history monotonicity violation this decision was blocking is now unblocked in principle; the current-day semantics fix it in turn gates still needs its own implementation and fresh verification pass before shipping (not undertaken here).
-2. **Treatment of sustained/moderate alternating engagement currently trapped at `insufficient_data`.** A new eighth `MomentumStateKey` (working name Rhythm) was investigated as a candidate resolution and rejected on architectural grounds — see "Rhythm: an eighth Momentum State investigated and rejected" above; that option is closed. The remaining options are a condition-aware narrative override on an existing state (`insufficient_data`, per Item 2's already-deferred override) or some other resolution not yet identified — the underlying trapped-confirmed-state defect itself is unaffected by this narrowing and remains open. Blocks Phase 5 on its own.
+2. ~~**Treatment of sustained/moderate alternating engagement currently trapped at `insufficient_data`.**~~ **Resolved 2026-08-18.** See "Trapped confirmed state: discriminator resolved" immediately above — a condition-aware narrative override on `insufficient_data`, triggered at 5 or more lifetime Scheduled Opportunities with at least one completion, verified exhaustively against the Coverage finding's own two-shapes proof. Sentences are drafted; only implementation is deferred, to the post-tester copy pass.
 
-Phase 5 has not begun.
+Neither open product decision blocks Phase 5 any longer. This resolves a documentation precondition only — it is not approval to begin Phase 5, which remains a separate, unmade decision. Phase 5 has not begun.
 
 ### Item 4 — Habit History UX improvements: recorded, not implemented
 
