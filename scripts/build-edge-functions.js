@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // Regenerates the shared-domain block inside both Deno Edge Functions from lib/domain/, so the
-// same business logic (dayKey, addDays, isDoneOnDay, streakForHabit, calendarConsistency today;
-// more as Phase 5 needs it) is never hand-duplicated a third time. calendarConsistency, not
-// consistency: neither Edge Function fetches habit_schedule_periods, so they keep the
-// pre-Scheduled-Opportunity calendar-day behavior under an honest name until that's addressed
-// (see lib/domain/habit-stats.ts's doc comment on calendarConsistency). See
+// same business logic (dayKey, addDays, isDoneOnDay, calendarStreakForHabit, calendarConsistency
+// today; more as Phase 5 needs it) is never hand-duplicated a third time. calendarStreakForHabit
+// and calendarConsistency, not streakForHabit/consistency: neither Edge Function fetches
+// habit_schedule_periods, so they keep the pre-Scheduled-Opportunity calendar-day behavior under
+// an honest name until that's addressed (see lib/domain/habit-stats.ts's doc comments on each).
+// See
 // docs/phase-2-implementation-plan.md section 2 for the full design: the Edge Functions are
 // hand-pasted into the Supabase Dashboard, with no CLI deploy and no build step, so a live shared
 // import isn't possible -- this is a deterministic text-splice generator instead. The remaining
@@ -32,7 +33,7 @@ const DOMAIN_DIR = path.join(ROOT, 'lib', 'domain');
 // neither Edge Function uses them today and including them would be unused, speculative code.
 const SOURCES = [
   { file: 'day-key.ts', names: ['dayKey', 'addDays'] },
-  { file: 'habit-stats.ts', names: ['logsForHabitOnDay', 'countForDay', 'isDoneOnDay', 'streakForHabit', 'DayStatus', 'recentHistory', 'calendarConsistency'] },
+  { file: 'habit-stats.ts', names: ['logsForHabitOnDay', 'countForDay', 'isDoneOnDay', 'calendarStreakForHabit', 'DayStatus', 'recentHistory', 'calendarConsistency'] },
 ];
 
 const TARGET_FILES = [

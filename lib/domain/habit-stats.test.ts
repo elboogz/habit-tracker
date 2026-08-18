@@ -1,6 +1,7 @@
 import {
   addDays,
   calendarConsistency,
+  calendarStreakForHabit,
   challengeProgress,
   consistency,
   countForDay,
@@ -146,44 +147,112 @@ describe('isDoneToday', () => {
   });
 });
 
-describe('streakForHabit', () => {
+// simpleHabit() defaults to createdAt 2020-01-01 with zero schedule periods -- daily/unpaused, and
+// old enough that no window used below reaches its creation floor. For a daily habit in that
+// shape, every calendar day is a Scheduled Opportunity, so schedule-aware streakForHabit/
+// longestStreak below produce identical numbers to the pre-Scheduled-Opportunity version for these
+// cases; only the added `schedulePeriods` argument changes. Schedule-shape-specific behavior
+// (Mon/Wed/Fri, a paused sub-range) is covered separately below.
+describe('streakForHabit (schedule-aware)', () => {
   it('is 0 with no logs', () => {
-    expect(streakForHabit(simpleHabit(), [])).toBe(0);
+    expect(streakForHabit(simpleHabit(), [], [])).toBe(0);
   });
 
   it('counts consecutive completed days ending today', () => {
     const habit = simpleHabit();
     const today = dayKey();
     const logs = [log(habit.id, today), log(habit.id, addDays(today, -1)), log(habit.id, addDays(today, -2))];
-    expect(streakForHabit(habit, logs)).toBe(3);
+    expect(streakForHabit(habit, logs, [])).toBe(3);
   });
 
   it('still counts a streak ending yesterday if today has no log yet', () => {
     const habit = simpleHabit();
     const today = dayKey();
     const logs = [log(habit.id, addDays(today, -1)), log(habit.id, addDays(today, -2))];
-    expect(streakForHabit(habit, logs)).toBe(2);
+    expect(streakForHabit(habit, logs, [])).toBe(2);
   });
 
   it('breaks on a gap', () => {
     const habit = simpleHabit();
     const today = dayKey();
     const logs = [log(habit.id, today), log(habit.id, addDays(today, -2))];
-    expect(streakForHabit(habit, logs)).toBe(1);
+    expect(streakForHabit(habit, logs, [])).toBe(1);
   });
 
   it('accepts an explicit asOfDate instead of always using live "now" -- needed by send-coaching-push, which computes each recipient\'s own local today', () => {
     const habit = simpleHabit();
     const logs = [log(habit.id, '2026-03-10'), log(habit.id, '2026-03-09'), log(habit.id, '2026-03-08')];
-    expect(streakForHabit(habit, logs, '2026-03-10')).toBe(3);
+    expect(streakForHabit(habit, logs, [], '2026-03-10')).toBe(3);
     // A date far from "now" produces a result based on that date, not the live default.
-    expect(streakForHabit(habit, logs, '2026-01-01')).toBe(0);
+    expect(streakForHabit(habit, logs, [], '2026-01-01')).toBe(0);
+  });
+
+  it('a non-scheduled day neither breaks nor extends the streak, for a Mon/Wed/Fri habit', () => {
+    // 2026-05-01 is a Friday. Perfect adherence on 04-27 (Mon), 04-29 (Wed), 05-01 (Fri) -- the
+    // calendar-day gaps between them (Tue/Thu/weekend) are never Scheduled Opportunities at all,
+    // so they don't appear in the walk to break the streak the way a raw calendar-day walk would.
+    const habit = simpleHabit({ createdAt: '2020-01-01T00:00:00.000Z' });
+    const periods = [
+      { id: 'p1', habitId: habit.id, effectiveFrom: '2020-01-01', days: [1, 3, 5], paused: false, createdAt: '2020-01-01T00:00:00.000Z', updatedAt: '2020-01-01T00:00:00.000Z' },
+    ];
+    const logs = [log(habit.id, '2026-04-27'), log(habit.id, '2026-04-29'), log(habit.id, '2026-05-01')];
+    expect(streakForHabit(habit, logs, periods, '2026-05-01')).toBe(3);
+  });
+
+  it('a paused sub-range is skipped, not counted as a break', () => {
+    const habit = simpleHabit({ createdAt: '2020-01-01T00:00:00.000Z' });
+    const periods = [
+      { id: 'p1', habitId: habit.id, effectiveFrom: '2020-01-01', days: 'daily' as const, paused: false, createdAt: '2020-01-01T00:00:00.000Z', updatedAt: '2020-01-01T00:00:00.000Z' },
+      { id: 'p2', habitId: habit.id, effectiveFrom: '2026-05-04', days: 'daily' as const, paused: true, createdAt: '2026-05-04T00:00:00.000Z', updatedAt: '2026-05-04T00:00:00.000Z' },
+      { id: 'p3', habitId: habit.id, effectiveFrom: '2026-05-06', days: 'daily' as const, paused: false, createdAt: '2026-05-06T00:00:00.000Z', updatedAt: '2026-05-06T00:00:00.000Z' },
+    ];
+    const logs = [log(habit.id, '2026-05-01'), log(habit.id, '2026-05-02'), log(habit.id, '2026-05-03'), log(habit.id, '2026-05-06')];
+    // 05-04/05-05 are paused (excluded entirely, not misses) -- the streak reaches all the way
+    // back to 05-01 through the pause, not just to 05-06.
+    expect(streakForHabit(habit, logs, periods, '2026-05-06')).toBe(4);
   });
 });
 
-describe('longestStreak', () => {
+// The pre-Scheduled-Opportunity behavior, preserved verbatim under calendarStreakForHabit's own
+// name -- see its doc comment in lib/domain/habit-stats.ts for why it still exists (the two Edge
+// Functions call it, and neither fetches habit_schedule_periods yet).
+describe('calendarStreakForHabit', () => {
   it('is 0 with no logs', () => {
-    expect(longestStreak(simpleHabit(), [])).toBe(0);
+    expect(calendarStreakForHabit(simpleHabit(), [])).toBe(0);
+  });
+
+  it('counts consecutive completed days ending today', () => {
+    const habit = simpleHabit();
+    const today = dayKey();
+    const logs = [log(habit.id, today), log(habit.id, addDays(today, -1)), log(habit.id, addDays(today, -2))];
+    expect(calendarStreakForHabit(habit, logs)).toBe(3);
+  });
+
+  it('still counts a streak ending yesterday if today has no log yet', () => {
+    const habit = simpleHabit();
+    const today = dayKey();
+    const logs = [log(habit.id, addDays(today, -1)), log(habit.id, addDays(today, -2))];
+    expect(calendarStreakForHabit(habit, logs)).toBe(2);
+  });
+
+  it('breaks on a gap', () => {
+    const habit = simpleHabit();
+    const today = dayKey();
+    const logs = [log(habit.id, today), log(habit.id, addDays(today, -2))];
+    expect(calendarStreakForHabit(habit, logs)).toBe(1);
+  });
+
+  it('accepts an explicit asOfDate instead of always using live "now"', () => {
+    const habit = simpleHabit();
+    const logs = [log(habit.id, '2026-03-10'), log(habit.id, '2026-03-09'), log(habit.id, '2026-03-08')];
+    expect(calendarStreakForHabit(habit, logs, '2026-03-10')).toBe(3);
+    expect(calendarStreakForHabit(habit, logs, '2026-01-01')).toBe(0);
+  });
+});
+
+describe('longestStreak (schedule-aware)', () => {
+  it('is 0 with no logs', () => {
+    expect(longestStreak(simpleHabit(), [], [])).toBe(0);
   });
 
   it('finds the longest run across a gap', () => {
@@ -196,7 +265,18 @@ describe('longestStreak', () => {
       log(habit.id, '2026-01-05'),
       log(habit.id, '2026-01-06'),
     ];
-    expect(longestStreak(habit, logs)).toBe(3);
+    expect(longestStreak(habit, logs, [])).toBe(3);
+  });
+
+  it('a Mon/Wed/Fri habit with perfect adherence over 2 weeks reads a 6-long streak, not broken by weekends/Tue/Thu', () => {
+    const habit = simpleHabit({ createdAt: '2020-01-01T00:00:00.000Z' });
+    const periods = [
+      { id: 'p1', habitId: habit.id, effectiveFrom: '2020-01-01', days: [1, 3, 5], paused: false, createdAt: '2020-01-01T00:00:00.000Z', updatedAt: '2020-01-01T00:00:00.000Z' },
+    ];
+    // 2026-05-01 is a Friday. Perfect MWF adherence 04-20 (Mon) through 05-01 (Fri): 6 opportunities.
+    const dates = ['2026-04-20', '2026-04-22', '2026-04-24', '2026-04-27', '2026-04-29', '2026-05-01'];
+    const logs = dates.map((date) => log(habit.id, date));
+    expect(longestStreak(habit, logs, periods)).toBe(6);
   });
 });
 

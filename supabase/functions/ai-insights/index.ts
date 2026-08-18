@@ -87,13 +87,16 @@ function isDoneOnDay(habit: Habit, logs: HabitLog[], date: string): boolean {
 }
 
 /**
- * Consecutive days (ending `asOfDate` or the day before) where the habit's target was met.
- * `asOfDate` defaults to the caller's live local "today" -- the only case the client app ever
- * needs. It exists as an explicit parameter because the send-coaching-push Edge Function must
- * compute this per recipient's own local "today" (their timezone, not the server's) rather than
- * the server's current date; that per-recipient date is what's passed in there.
+ * Calendar-day streak -- `streakForHabit`'s pre-Scheduled-Opportunity behavior, preserved verbatim
+ * under an honest name. Exists only so scripts/build-edge-functions.js's generated block (see the
+ * SOURCES list there) can keep inlining a function the two Edge Functions actually call (both
+ * build a `streakDays` field for their coaching prompts) without silently changing their behavior:
+ * neither Edge Function fetches habit_schedule_periods today, so they cannot call the
+ * schedule-aware streakForHabit() above without a separate, deliberate change (the same Edge
+ * Function integration gated in docs/phase-4-completion-report.md's Consistency entry). Not used
+ * by any client screen -- every client call site reads the schedule-aware streakForHabit() instead.
  */
-function streakForHabit(habit: Habit, logs: HabitLog[], asOfDate: string = dayKey()): number {
+function calendarStreakForHabit(habit: Habit, logs: HabitLog[], asOfDate: string = dayKey()): number {
   let cursor = isDoneOnDay(habit, logs, asOfDate) ? asOfDate : addDays(asOfDate, -1);
 
   let streak = 0;
@@ -282,7 +285,7 @@ Deno.serve(async (req) => {
     const summary = habits.map((habit: HabitRow) => ({
       name: habit.name,
       emoji: habit.emoji,
-      streakDays: streakForHabit(toDomainHabit(habit), toDomainLogs(logs ?? [])),
+      streakDays: calendarStreakForHabit(toDomainHabit(habit), toDomainLogs(logs ?? [])),
       consistencyPct: Math.round(calendarConsistency(toDomainHabit(habit), toDomainLogs(logs ?? []), config.windowDays) * 100),
     }));
 

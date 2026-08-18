@@ -1,6 +1,6 @@
 import type { Challenge, Habit, HabitLog, HabitSchedulePeriod } from '../habit-types';
 import { addDays, dayKey, daysBetween } from './day-key';
-import { isScheduledOpportunity, scheduledOpportunitiesInWindow } from './schedule';
+import { isScheduledOpportunity, scheduledOpportunitiesInWindow, scheduledOpportunitiesUpTo } from './schedule';
 
 // Re-exported so existing `@/lib/habit-stats` imports of dayKey/addDays (via the barrel) keep
 // working unchanged -- day-key.ts is the canonical home now that schedule.ts needs these too,
@@ -58,13 +58,49 @@ export function totalCompletions(habitId: string, logs: HabitLog[]): number {
 }
 
 /**
- * Consecutive days (ending `asOfDate` or the day before) where the habit's target was met.
- * `asOfDate` defaults to the caller's live local "today" -- the only case the client app ever
- * needs. It exists as an explicit parameter because the send-coaching-push Edge Function must
- * compute this per recipient's own local "today" (their timezone, not the server's) rather than
- * the server's current date; that per-recipient date is what's passed in there.
+ * Consecutive Scheduled Opportunities (ending `asOfDate` or the one before it) where the habit's
+ * target was met. Per docs/habit-tracker-evolution-plan.md's Scheduled Opportunity principle
+ * (Streak added to that list as a correction, not a new decision -- it was omitted in error): a
+ * non-scheduled date (a Tuesday for a Mon/Wed/Fri habit) is skipped entirely, neither breaking nor
+ * extending the streak, rather than read as a miss the way a raw calendar-day walk would. For a
+ * daily/unpaused habit this is identical to the prior calendar-day behaviour, since every calendar
+ * day is a Scheduled Opportunity. `asOfDate` defaults to the caller's live local "today" -- the
+ * only case the client app ever needs. It exists as an explicit parameter because the
+ * send-coaching-push Edge Function must compute this per recipient's own local "today" (their
+ * timezone, not the server's) rather than the server's current date; that per-recipient date is
+ * what's passed in there.
  */
-export function streakForHabit(habit: Habit, logs: HabitLog[], asOfDate: string = dayKey()): number {
+export function streakForHabit(
+  habit: Habit,
+  logs: HabitLog[],
+  schedulePeriods: HabitSchedulePeriod[],
+  asOfDate: string = dayKey(),
+): number {
+  const opportunities = scheduledOpportunitiesUpTo(habit, schedulePeriods, asOfDate);
+  let index = opportunities.length - 1;
+  if (index >= 0 && opportunities[index] === asOfDate && !isDoneOnDay(habit, logs, opportunities[index])) {
+    index -= 1;
+  }
+
+  let streak = 0;
+  while (index >= 0 && isDoneOnDay(habit, logs, opportunities[index])) {
+    streak += 1;
+    index -= 1;
+  }
+  return streak;
+}
+
+/**
+ * Calendar-day streak -- `streakForHabit`'s pre-Scheduled-Opportunity behavior, preserved verbatim
+ * under an honest name. Exists only so scripts/build-edge-functions.js's generated block (see the
+ * SOURCES list there) can keep inlining a function the two Edge Functions actually call (both
+ * build a `streakDays` field for their coaching prompts) without silently changing their behavior:
+ * neither Edge Function fetches habit_schedule_periods today, so they cannot call the
+ * schedule-aware streakForHabit() above without a separate, deliberate change (the same Edge
+ * Function integration gated in docs/phase-4-completion-report.md's Consistency entry). Not used
+ * by any client screen -- every client call site reads the schedule-aware streakForHabit() instead.
+ */
+export function calendarStreakForHabit(habit: Habit, logs: HabitLog[], asOfDate: string = dayKey()): number {
   let cursor = isDoneOnDay(habit, logs, asOfDate) ? asOfDate : addDays(asOfDate, -1);
 
   let streak = 0;
@@ -75,25 +111,26 @@ export function streakForHabit(habit: Habit, logs: HabitLog[], asOfDate: string 
   return streak;
 }
 
-/** Longest run of consecutive completed days across the habit's entire history. */
-export function longestStreak(habit: Habit, logs: HabitLog[]): number {
-  const habitLogs = logs.filter((log) => log.habitId === habit.id);
-  if (habitLogs.length === 0) return 0;
-
-  const earliest = habitLogs.reduce((min, log) => (log.date < min ? log.date : min), habitLogs[0].date);
-  const today = dayKey();
+/**
+ * Longest run of consecutive completed Scheduled Opportunities across the habit's entire history --
+ * schedule-aware for the same reason streakForHabit is above. Walks scheduledOpportunitiesUpTo
+ * (already floored at the habit's creation date) directly rather than computing an "earliest log"
+ * starting point first: a leading run of not-done Scheduled Opportunities before the first real
+ * completion only ever resets `current` to 0, so it can never affect the final `longest`, and the
+ * creation floor already bounds the walk without needing a second, narrower one.
+ */
+export function longestStreak(habit: Habit, logs: HabitLog[], schedulePeriods: HabitSchedulePeriod[]): number {
+  const opportunities = scheduledOpportunitiesUpTo(habit, schedulePeriods, dayKey());
 
   let longest = 0;
   let current = 0;
-  let cursor = earliest;
-  while (cursor <= today) {
-    if (isDoneOnDay(habit, logs, cursor)) {
+  for (const date of opportunities) {
+    if (isDoneOnDay(habit, logs, date)) {
       current += 1;
       longest = Math.max(longest, current);
     } else {
       current = 0;
     }
-    cursor = addDays(cursor, 1);
   }
   return longest;
 }

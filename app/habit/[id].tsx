@@ -66,8 +66,8 @@ export default function HabitDetailScreen() {
   }
 
   const today = dayKey();
-  const streak = streakForHabit(habit, state.logs);
-  const best = longestStreak(habit, state.logs);
+  const streak = streakForHabit(habit, state.logs, state.schedulePeriods);
+  const best = longestStreak(habit, state.logs, state.schedulePeriods);
   const history = recentHistory(habit, state.logs, HISTORY_DAYS);
   // Merged by date, not position, per lib/domain/schedule.ts's scheduledOpportunityFlags doc
   // comment -- recentHistory stays calendar-based (unchanged), this only attaches the
