@@ -106,6 +106,30 @@ export function scheduledOpportunitiesInWindow(
   return result;
 }
 
+/**
+ * Per-date Scheduled Opportunity classification for `habit` within the trailing `days`-day window
+ * ending `asOfDate` (inclusive), oldest first -- keyed by date so callers merge it against
+ * recentHistory's own output by date rather than trusting positional alignment between two
+ * separately-built arrays. Calls isScheduledOpportunity per date, the same primitive
+ * scheduledOpportunitiesInWindow is built on, rather than re-deriving any part of its
+ * creation-floor/pause/weekday ordering. Paused dates and ordinary off-schedule dates both resolve
+ * to `scheduled: false` here identically -- isScheduledOpportunity itself doesn't distinguish them,
+ * and per product decision they share one presentation state, so this function doesn't either.
+ */
+export function scheduledOpportunityFlags(
+  habit: Habit,
+  periods: HabitSchedulePeriod[],
+  days: number,
+  asOfDate: string = dayKey(),
+): { date: string; scheduled: boolean }[] {
+  const result: { date: string; scheduled: boolean }[] = [];
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const date = addDays(asOfDate, -i);
+    result.push({ date, scheduled: isScheduledOpportunity(periods, habit, date) });
+  }
+  return result;
+}
+
 /** Number of days (today plus the days before it) the production retroactive-entry correction panel covers. */
 export const RETROACTIVE_ENTRY_WINDOW_DAYS = 7;
 

@@ -10,6 +10,7 @@ import {
   scheduleForDate,
   scheduledOpportunitiesInWindow,
   scheduledOpportunitiesUpTo,
+  scheduledOpportunityFlags,
   weekdayOf,
 } from './schedule';
 
@@ -198,6 +199,84 @@ describe('scheduledOpportunitiesInWindow (windowed counterpart, motivated by Con
     ];
     expect(scheduledOpportunitiesInWindow(h, periods, 7, '2026-05-07')).toEqual([
       '2026-05-01', '2026-05-02', '2026-05-03', '2026-05-06', '2026-05-07',
+    ]);
+  });
+});
+
+describe("scheduledOpportunityFlags (per-date classification for HabitCalendar's third cell state)", () => {
+  it('agrees with scheduledOpportunitiesInWindow -- every scheduled date true, every other false', () => {
+    const h = habit({ createdAt: '2026-05-01T00:00:00.000Z' }); // a Friday
+    const periods = [period({ effectiveFrom: '2026-05-01', days: [1, 3, 5] })];
+    const flags = scheduledOpportunityFlags(h, periods, 6, '2026-05-06');
+    const scheduledDates = new Set(scheduledOpportunitiesInWindow(h, periods, 6, '2026-05-06'));
+    expect(flags.every((flag) => flag.scheduled === scheduledDates.has(flag.date))).toBe(true);
+    expect(flags.map((flag) => flag.date)).toEqual([
+      '2026-05-01', '2026-05-02', '2026-05-03', '2026-05-04', '2026-05-05', '2026-05-06',
+    ]);
+  });
+
+  it('marks non-daily off-schedule weekdays false, for a Mon/Wed/Fri habit', () => {
+    const h = habit({ createdAt: '2026-05-01T00:00:00.000Z' }); // a Friday
+    const periods = [period({ effectiveFrom: '2026-05-01', days: [1, 3, 5] })];
+    expect(scheduledOpportunityFlags(h, periods, 6, '2026-05-06')).toEqual([
+      { date: '2026-05-01', scheduled: true }, // Fri
+      { date: '2026-05-02', scheduled: false }, // Sat
+      { date: '2026-05-03', scheduled: false }, // Sun
+      { date: '2026-05-04', scheduled: true }, // Mon
+      { date: '2026-05-05', scheduled: false }, // Tue
+      { date: '2026-05-06', scheduled: true }, // Wed
+    ]);
+  });
+
+  it('marks a paused sub-range false, indistinguishable from an ordinary off-schedule date', () => {
+    const h = habit({ createdAt: '2026-05-01T00:00:00.000Z' });
+    const periods = [
+      period({ effectiveFrom: '2026-05-01', days: 'daily', paused: false }),
+      period({ id: 'p2', effectiveFrom: '2026-05-04', days: 'daily', paused: true }),
+      period({ id: 'p3', effectiveFrom: '2026-05-06', days: 'daily', paused: false }),
+    ];
+    // The paused dates (05-04, 05-05) resolve to the same `scheduled: false` an ordinary
+    // off-schedule date would -- no field here distinguishes "paused" from "not scheduled today",
+    // matching the product decision that they share one presentation state.
+    expect(scheduledOpportunityFlags(h, periods, 7, '2026-05-07')).toEqual([
+      { date: '2026-05-01', scheduled: true },
+      { date: '2026-05-02', scheduled: true },
+      { date: '2026-05-03', scheduled: true },
+      { date: '2026-05-04', scheduled: false },
+      { date: '2026-05-05', scheduled: false },
+      { date: '2026-05-06', scheduled: true },
+      { date: '2026-05-07', scheduled: true },
+    ]);
+  });
+
+  it('marks pre-creation dates false regardless of the (absent) schedule', () => {
+    const h = habit({ createdAt: '2026-05-04T00:00:00.000Z' });
+    expect(scheduledOpportunityFlags(h, [], 7, '2026-05-06')).toEqual([
+      { date: '2026-04-30', scheduled: false }, // before creation
+      { date: '2026-05-01', scheduled: false },
+      { date: '2026-05-02', scheduled: false },
+      { date: '2026-05-03', scheduled: false },
+      { date: '2026-05-04', scheduled: true }, // creation day itself
+      { date: '2026-05-05', scheduled: true },
+      { date: '2026-05-06', scheduled: true },
+    ]);
+  });
+
+  it('the creation floor wins over a period whose effectiveFrom predates the habit (degenerate case)', () => {
+    const h = habit({ createdAt: '2026-05-05T00:00:00.000Z' });
+    // This period's effectiveFrom (05-01) predates the habit's own creation (05-05) -- shouldn't
+    // occur through normal use, but isScheduledOpportunity's own doc comment calls out that the
+    // creation floor must still win regardless of how a period got there. A daily, unpaused period
+    // would otherwise mark every date in the window scheduled.
+    const periods = [period({ effectiveFrom: '2026-05-01', days: 'daily', paused: false })];
+    expect(scheduledOpportunityFlags(h, periods, 7, '2026-05-07')).toEqual([
+      { date: '2026-05-01', scheduled: false }, // pre-creation -- floor wins despite the period covering this date
+      { date: '2026-05-02', scheduled: false },
+      { date: '2026-05-03', scheduled: false },
+      { date: '2026-05-04', scheduled: false },
+      { date: '2026-05-05', scheduled: true }, // creation day -- the period now applies
+      { date: '2026-05-06', scheduled: true },
+      { date: '2026-05-07', scheduled: true },
     ]);
   });
 });

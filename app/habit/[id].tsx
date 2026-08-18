@@ -10,7 +10,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { confirmAction } from '@/lib/confirm';
 import { averageRecoveryTime, recoveryRate } from '@/lib/domain/recovery';
-import { retroactiveEntryWindowStart } from '@/lib/domain/schedule';
+import { retroactiveEntryWindowStart, scheduledOpportunityFlags } from '@/lib/domain/schedule';
 import {
   consistency,
   countForDay,
@@ -65,13 +65,20 @@ export default function HabitDetailScreen() {
     );
   }
 
+  const today = dayKey();
   const streak = streakForHabit(habit, state.logs);
   const best = longestStreak(habit, state.logs);
   const history = recentHistory(habit, state.logs, HISTORY_DAYS);
+  // Merged by date, not position, per lib/domain/schedule.ts's scheduledOpportunityFlags doc
+  // comment -- recentHistory stays calendar-based (unchanged), this only attaches the
+  // Scheduled-Opportunity fact HabitCalendar needs for its third cell state.
+  const scheduleFlags = new Map(
+    scheduledOpportunityFlags(habit, state.schedulePeriods, HISTORY_DAYS, today).map((flag) => [flag.date, flag.scheduled]),
+  );
+  const historyWithSchedule = history.map((day) => ({ ...day, scheduled: scheduleFlags.get(day.date) ?? false }));
   const total = totalCompletions(habit.id, state.logs);
   const rawConsistency = consistency(habit, state.logs, HISTORY_DAYS, state.schedulePeriods);
   const habitConsistency = rawConsistency === null ? null : Math.round(rawConsistency * 100);
-  const today = dayKey();
   const rate = recoveryRate(habit, state.schedulePeriods, state.logs, today);
   const avgRecoveryDays = averageRecoveryTime(habit, state.schedulePeriods, state.logs, today);
   const recoveryTile = recoveryTileContent(rate, avgRecoveryDays);
@@ -123,7 +130,7 @@ export default function HabitDetailScreen() {
                 <ThemedText type="title" style={{ fontSize: 28 }}>
                   {habitConsistency}%
                 </ThemedText>
-                <ThemedText style={{ color: colors.icon, fontSize: 13 }}>last {HISTORY_DAYS} days</ThemedText>
+                <ThemedText style={{ color: colors.icon, fontSize: 13 }}>of scheduled days</ThemedText>
               </ThemedView>
             )}
           </ThemedView>
@@ -134,7 +141,7 @@ export default function HabitDetailScreen() {
               Tap any of the last 6 days (dashed border) to add or correct a completion.
             </ThemedText>
             <HabitCalendar
-              history={history}
+              history={historyWithSchedule}
               fillColor={colors.tint}
               emptyColor={colors.icon}
               textColor={colors.text}

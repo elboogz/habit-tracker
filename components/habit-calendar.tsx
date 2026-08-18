@@ -6,6 +6,9 @@ import { addDays, dayKey, type DayStatus } from '@/lib/habit-stats';
 
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
+/** A history day plus whether it was a Scheduled Opportunity -- see HabitCalendar's own doc comment. */
+type ScheduledDayStatus = DayStatus & { scheduled: boolean };
+
 function parseDayKey(key: string): Date {
   const [year, month, day] = key.split('-').map(Number);
   return new Date(year, month - 1, day);
@@ -22,6 +25,14 @@ function parseDayKey(key: string): Date {
  * the raw 6-day-back window for backward compatibility if a caller doesn't supply one. Progress's
  * existing usage passes neither `onDayPress` nor `minEditableDate`, so it stays visually and
  * behaviorally unchanged.
+ *
+ * Each `history` entry's `scheduled` flag (see lib/domain/schedule.ts's `scheduledOpportunityFlags`)
+ * drives a third, receded cell treatment for dates that were not a Scheduled Opportunity -- paused
+ * dates and ordinary off-schedule dates render identically, since neither the domain layer nor this
+ * component distinguishes them (product decision). `scheduled` deliberately does not affect
+ * `isEditable`: extra completions on non-scheduled days remain a permitted, deliberate product
+ * decision on both the live (Today) and retroactive (here) paths, so every day in the existing
+ * editable window stays pressable regardless of `scheduled`.
  */
 export function HabitCalendar({
   history,
@@ -31,7 +42,7 @@ export function HabitCalendar({
   onDayPress,
   minEditableDate,
 }: {
-  history: DayStatus[];
+  history: ScheduledDayStatus[];
   fillColor: string;
   emptyColor: string;
   textColor: string;
@@ -41,10 +52,10 @@ export function HabitCalendar({
   if (history.length === 0) return null;
 
   const leadingBlanks = parseDayKey(history[0].date).getDay();
-  const cells: (DayStatus | null)[] = [...Array.from({ length: leadingBlanks }, () => null), ...history];
+  const cells: (ScheduledDayStatus | null)[] = [...Array.from({ length: leadingBlanks }, () => null), ...history];
   while (cells.length % 7 !== 0) cells.push(null);
 
-  const weeks: (DayStatus | null)[][] = [];
+  const weeks: (ScheduledDayStatus | null)[][] = [];
   for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
 
   const today = dayKey();
@@ -65,15 +76,21 @@ export function HabitCalendar({
             if (!day) return <ThemedView key={dayIndex} style={styles.cell} />;
             const isToday = day.date === today;
             const isEditable = !!onDayPress && day.date >= editableFrom && day.date < today;
+            // Recedes rather than competing with the done/missed states: same border mechanism
+            // already used for a missed day (emptyColor at reduced alpha), just fainter, plus a
+            // dimmed day-number reusing the same muted tone the weekday header labels already use
+            // above -- no new colour token. Only applies when not done, so a completion logged on
+            // a non-scheduled day (a permitted bonus completion) still renders exactly as done.
+            const isReceded = !day.scheduled && !day.done;
             const cellStyle = [
               styles.cell,
               styles.dayCell,
-              { borderColor: isToday ? fillColor : emptyColor + '33' },
+              { borderColor: isToday ? fillColor : isReceded ? emptyColor + '20' : emptyColor + '33' },
               day.done && { backgroundColor: fillColor, borderColor: fillColor },
               isEditable && { borderStyle: 'dashed' as const },
             ];
             const dayNumber = (
-              <ThemedText style={{ fontSize: 12, color: day.done ? '#fff' : textColor }}>
+              <ThemedText style={{ fontSize: 12, color: day.done ? '#fff' : isReceded ? emptyColor : textColor }}>
                 {parseDayKey(day.date).getDate()}
               </ThemedText>
             );
