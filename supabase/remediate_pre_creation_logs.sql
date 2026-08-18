@@ -50,13 +50,11 @@
 -- at write time, so exact UTC-vs-device-local time-of-day preservation was never going to be
 -- perfectly reconstructable regardless of what this migration did.
 --
--- CAVEAT -- one habit ID does not parse as a well-formed UUID as reported. The "Drink Water" habit
--- under user 4f7549e0-18ff-4be3-bb3f-4041665ebc35 was given as
--- 80fa9ad6-9912-479d-b83a-2b23897a63f, whose final segment is 11 hex characters, one short of the
--- standard 12 (checked programmatically against all 7 IDs; this is the only one that doesn't parse
--- as 8-4-4-4-12). Included verbatim below, not guessed or corrected. CONFIRM THE EXACT ID before
--- running -- if this is wrong, that row's UPDATE will match zero rows (a safe no-op, not a
--- wrong-row write), and the verification query below will still show it as offending afterwards.
+-- RESOLVED CAVEAT -- the "Drink Water" habit under user 4f7549e0-18ff-4be3-bb3f-4041665ebc35 was
+-- initially transcribed as 80fa9ad6-9912-479d-b83a-2b23897a63f (11-character final segment, one
+-- short of the standard 12 -- the only one of the 7 IDs that failed to parse as 8-4-4-4-12).
+-- Corrected against a direct database read to 80fa9ad6-9912-479d-b83a-2b23897a63ff (12-character
+-- final segment, confirmed well-formed). All 7 IDs below are now confirmed well-formed UUIDs.
 --
 -- Corrected date per habit = the earliest offending habit_logs.date already reported for that habit
 -- (supabase/audit_pre_creation_logs.sql's earliest_offending_log_date) -- exactly what
@@ -69,7 +67,7 @@ begin;
 with corrections (habit_id, corrected_date, habit_label) as (
   values
     ('b393856b-b7a2-4bdd-b231-18ab6975ea73'::text, '2026-07-05'::date, 'Listen to music (user 4f7549e0...)'),
-    ('80fa9ad6-9912-479d-b83a-2b23897a63f'::text, '2026-07-07'::date, 'Drink Water (user 4f7549e0...) -- ID CAVEAT ABOVE, CONFIRM BEFORE RUNNING'),
+    ('80fa9ad6-9912-479d-b83a-2b23897a63ff'::text, '2026-07-07'::date, 'Drink Water (user 4f7549e0...)'),
     ('bf1b7419-45a5-44a9-95e3-dc2af4e271bf'::text, '2026-06-02'::date, 'Move my body (user 2f7d4bdf...)'),
     ('eac0e1de-1a0b-4b48-8a84-99da28ccf13d'::text, '2026-06-02'::date, 'Drink Water (user 2f7d4bdf...)'),
     ('5aec98b7-47fd-47f2-a031-e93f6758cc8f'::text, '2026-06-26'::date, 'Read (user 75288e15...)'),
@@ -106,7 +104,7 @@ from public.habit_logs l
 join public.habits h on h.id = l.habit_id
 where h.id in (
   'b393856b-b7a2-4bdd-b231-18ab6975ea73',
-  '80fa9ad6-9912-479d-b83a-2b23897a63f',
+  '80fa9ad6-9912-479d-b83a-2b23897a63ff',
   'bf1b7419-45a5-44a9-95e3-dc2af4e271bf',
   'eac0e1de-1a0b-4b48-8a84-99da28ccf13d',
   '5aec98b7-47fd-47f2-a031-e93f6758cc8f',
@@ -131,7 +129,7 @@ group by h.id, h.name, h.created_at;
 -- with originals (habit_id, original_created_at) as (
 --   values
 --     ('b393856b-b7a2-4bdd-b231-18ab6975ea73'::text, '2026-08-03 21:47:32.665+00'::timestamptz),
---     ('80fa9ad6-9912-479d-b83a-2b23897a63f'::text, '2026-08-05 10:35:32.274+00'::timestamptz),
+--     ('80fa9ad6-9912-479d-b83a-2b23897a63ff'::text, '2026-08-05 10:35:32.274+00'::timestamptz),
 --     ('bf1b7419-45a5-44a9-95e3-dc2af4e271bf'::text, '2026-06-20 19:26:47.068+00'::timestamptz),
 --     ('eac0e1de-1a0b-4b48-8a84-99da28ccf13d'::text, '2026-06-20 19:26:47.068+00'::timestamptz),
 --     ('5aec98b7-47fd-47f2-a031-e93f6758cc8f'::text, '2026-06-30 20:07:31.737+00'::timestamptz),
