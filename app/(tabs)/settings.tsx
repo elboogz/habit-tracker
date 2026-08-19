@@ -12,7 +12,7 @@ import { getInsight, type InsightKind, regenerateInsight } from '@/lib/ai-coach'
 import { useAuth } from '@/lib/auth-store';
 import { disableCoachPush, enableCoachPush, getCoachPushPrefs } from '@/lib/coach-push';
 import { alertMessage, confirmAction } from '@/lib/confirm';
-import type { ScenarioKey } from '@/lib/domain/dev-simulation';
+import { widenedForDevSimulation, type ScenarioKey } from '@/lib/domain/dev-simulation';
 import { recentScheduledPatternDates } from '@/lib/domain/schedule';
 import { addDays, challengeProgress, dayKey } from '@/lib/habit-stats';
 import { useHabitStore } from '@/lib/habit-store';
@@ -228,8 +228,11 @@ export default function SettingsScreen() {
     // for the user to log for real) -- for a daily habit this is unchanged from the prior plain
     // addDays loop; for a non-daily habit it now spans however many calendar days that many actual
     // Scheduled Opportunities require, rather than backfilling calendar days the habit was never
-    // asking for.
-    const dates = recentScheduledPatternDates(habitId, state.schedulePeriods, STREAK_BACKFILL_DAYS, addDays(dayKey(), -1));
+    // asking for. Widened for generation only (never persisted as-is; debugBackfillLogs backdates
+    // the real, minimal period from the resulting dates) so a schedule set only moments ago still
+    // generates against its real weekday pattern instead of falling back to daily beforehand.
+    const generationPeriods = widenedForDevSimulation(habitId, state.schedulePeriods, dayKey());
+    const dates = recentScheduledPatternDates(habitId, generationPeriods, STREAK_BACKFILL_DAYS, addDays(dayKey(), -1));
     debugBackfillLogs(habitId, dates);
     setSimulatedIds((current) => new Set([...current, habitId]));
     setTimeout(() => {
@@ -512,11 +515,15 @@ export default function SettingsScreen() {
                   ))}
                   <ThemedText style={{ color: colors.icon, fontSize: 12, lineHeight: 17 }}>
                     Overwrites that habit&apos;s last 7-12 days with a real, valid history (backdating its creation
-                    date the same way the tools above do), so the Recovery Card, Momentum State, and Recovery Rate
-                    all read it exactly as they would genuine usage — nothing is bypassed or faked. &quot;Miss
-                    yesterday&quot; and &quot;Miss 2 scheduled days&quot; leave today open so you can log the habit on the
-                    Today tab and see the real Recovery Card and celebration; the rest fill in today too, for an
-                    instant Progress-screen preview of that Momentum State or recovery outcome.
+                    date the same way the tools above do, and, for a non-daily schedule, backdating the active
+                    schedule period to cover the same window), so the Recovery Card, Momentum State, and Recovery
+                    Rate all read it exactly as they would genuine usage; nothing is bypassed or faked. If the
+                    habit had more than one schedule period before this ran, that earlier schedule history is
+                    flattened into whichever period is active today, since this tool is for testing behaviour,
+                    not for keeping an exact record. &quot;Miss yesterday&quot; and &quot;Miss 2 scheduled
+                    days&quot; leave today open so you can log the habit on the Today tab and see the real
+                    Recovery Card and celebration; the rest fill in today too, for an instant Progress-screen
+                    preview of that Momentum State or recovery outcome.
                   </ThemedText>
                 </ThemedView>
               )}

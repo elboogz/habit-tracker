@@ -10,7 +10,14 @@
 // rather than inventing alternative definitions.
 import type { Habit, HabitLog } from '../habit-types';
 import { addDays } from './day-key';
-import { backdatedCreatedAt, scenarioPattern, simulatedLogsFor, type ScenarioKey } from './dev-simulation';
+import {
+  backdatedCreatedAt,
+  backdatedSchedulePeriod,
+  scenarioPattern,
+  simulatedLogsFor,
+  widenedForDevSimulation,
+  type ScenarioKey,
+} from './dev-simulation';
 import { consistency, totalCompletions } from './habit-stats';
 import { candidateStateAt, confirmedStateAt } from './momentum';
 import { closedLapses, openLapse, recoveryEvents, recoveryRate } from './recovery';
@@ -416,35 +423,99 @@ describe('scenario simulator is schedule-aware, not just daily-compatible', () =
   });
 });
 
-// Documents a known, currently-unfixed gap, distinct from the one the describe block above
-// covers. That block's `mwf` fixture has effectiveFrom 2020-01-01, already covering the whole
-// simulated window -- a stand-in for "the schedule has been in effect a long time." It is not a
-// stand-in for a habit whose non-daily schedule was set at creation (app/habit-form.tsx's new
-// creation-time picker): there, the habit's only period has effectiveFrom equal to its own
-// (not-yet-backdated) real createdAt, which recentScheduledPatternDates -- deliberately floor-free,
-// see its own doc comment in schedule.ts -- walks straight past once the pattern needs more days of
-// history than have really elapsed since creation. The result is the same implicit-daily-default
-// gap the "Sleep 2" on-device report found, reproduced here for a habit created via the fixed
-// creation path rather than the edit path: creation-time scheduling alone does not close this loop.
-// That is the dev-tool period-backdating work, tracked separately and not implemented in this
-// commit; this test characterizes the gap it will need to close, and should be revisited once that
-// work lands.
-describe('scenario simulator still has the pre-backdating gap for a habit scheduled at creation (tracked separately, not fixed by the creation-time schedule picker)', () => {
-  it('a freshly-created MWF habit, schedule set at creation, still gets bonus completions on non-scheduled days when a scenario needs more history than has really elapsed', () => {
+// Documents scenarioPattern's own raw behavior, unchanged by design, when handed a habit's real
+// (not-yet-widened) schedule periods directly -- distinct from the describe block above, whose
+// `mwf` fixture has effectiveFrom 2020-01-01, already covering the whole simulated window, a
+// stand-in for "the schedule has been in effect a long time." This block's fixture instead matches
+// a habit whose non-daily schedule was set at creation (app/habit-form.tsx's creation-time
+// picker): the habit's only period has effectiveFrom equal to its own real creation day, and
+// scenarioPattern (via recentScheduledPatternDates, deliberately floor-free -- see its own doc
+// comment in schedule.ts) walks straight past that into the implicit daily default once the
+// pattern needs more days of history than have really elapsed since creation. This is expected,
+// not a bug in scenarioPattern itself: every real dev-tool call site now runs
+// widenedForDevSimulation first, which is what actually closes the loop -- proven in the describe
+// block immediately below, using this exact fixture.
+describe('scenarioPattern alone, given a habit\'s real (unwidened) periods, still walks past a just-set schedule -- by design, not a defect', () => {
+  it('a freshly-created MWF habit, schedule set at creation, gets bonus completions on non-scheduled days when a scenario needs more history than has really elapsed', () => {
     const today = '2026-08-19';
     // Exactly what app/habit-form.tsx's creation path now produces: one period, effectiveFrom the
-    // habit's own real creation day -- no backdating has happened yet at this point in the flow.
+    // habit's own real creation day -- no widening has happened yet at this point.
     const freshlyCreatedMwf = [period({ effectiveFrom: today, days: [1, 3, 5] })];
 
     const pattern = scenarioPattern('missTwoConsecutive', 'h1', freshlyCreatedMwf, today);
     const weekdays = pattern.map((day) => weekdayOf(day.date));
-    // If this ever starts failing, the gap has closed -- flip this test to assert only [1, 3, 5],
-    // matching the describe block above, and fold it back into "scenario simulator is
-    // schedule-aware" rather than keeping it separate.
     expect(weekdays).not.toEqual(weekdays.filter((day) => [1, 3, 5].includes(day)));
     expect(pattern.map((day) => day.date)).toEqual([
       '2026-08-10', '2026-08-11', '2026-08-12', '2026-08-13', '2026-08-14',
       '2026-08-15', '2026-08-16', '2026-08-17', '2026-08-18', '2026-08-19',
     ]);
+  });
+});
+
+describe('widenedForDevSimulation + backdatedSchedulePeriod together close the loop the describe block above documents', () => {
+  const today = '2026-08-19';
+  const freshlyCreatedMwf = [period({ effectiveFrom: today, days: [1, 3, 5] })];
+
+  it('generating against the widened periods produces only Mon/Wed/Fri dates, for every scenario length', () => {
+    const lengths: [ScenarioKey, number][] = [
+      ['missYesterday', 9],
+      ['missTwoConsecutive', 10],
+      ['recoverToday', 9],
+      ['recoverAfterMultipleMisses', 12],
+      ['quietStretch', 12],
+      ['rebuilding', 7],
+      ['building', 6],
+      ['thriving', 10],
+    ];
+    const generationPeriods = widenedForDevSimulation('h1', freshlyCreatedMwf, today);
+    for (const [scenario, count] of lengths) {
+      const pattern = scenarioPattern(scenario, 'h1', generationPeriods, today);
+      expect(pattern).toHaveLength(count);
+      for (const day of pattern) {
+        expect([1, 3, 5]).toContain(weekdayOf(day.date));
+      }
+    }
+  });
+
+  it('the widened period is never persisted as-is -- it does not appear in backdatedSchedulePeriod\'s output', () => {
+    const generationPeriods = widenedForDevSimulation('h1', freshlyCreatedMwf, today);
+    const widenedOnly = generationPeriods.find((p) => p.id === 'h1-dev-simulated-schedule');
+    expect(widenedOnly?.effectiveFrom).toBe('2025-08-18'); // 366 days before `today`, the heuristic bound
+
+    const pattern = scenarioPattern('missTwoConsecutive', 'h1', generationPeriods, today);
+    const windowDates = pattern.map((day) => day.date);
+    const result = backdatedSchedulePeriod('h1', freshlyCreatedMwf, today, windowDates);
+    const backdated = result.find((p) => p.id === 'h1-dev-simulated-schedule');
+    // Backdated only as far as the pattern actually needed, not the heuristic 366-day bound above.
+    expect(backdated?.effectiveFrom).toBe(windowDates[0]);
+    expect(backdated?.effectiveFrom).not.toBe('2025-08-18');
+  });
+
+  it('re-running backdatedSchedulePeriod for the same habit replaces the prior synthetic period rather than accumulating a second one', () => {
+    const first = backdatedSchedulePeriod('h1', freshlyCreatedMwf, today, ['2026-08-05']);
+    expect(first.filter((p) => p.id === 'h1-dev-simulated-schedule')).toHaveLength(1);
+    const second = backdatedSchedulePeriod('h1', first, today, ['2026-07-20']);
+    expect(second.filter((p) => p.id === 'h1-dev-simulated-schedule')).toHaveLength(1);
+    expect(second.find((p) => p.id === 'h1-dev-simulated-schedule')?.effectiveFrom).toBe('2026-07-20');
+  });
+
+  it('a genuinely older, real period for the same habit is left untouched, superseded rather than rewritten', () => {
+    const olderRealPeriod = period({ id: 'older-real', effectiveFrom: '2019-01-01', days: 'daily' });
+    const periods = [olderRealPeriod, ...freshlyCreatedMwf];
+    const result = backdatedSchedulePeriod('h1', periods, today, ['2026-08-05']);
+    expect(result).toContainEqual(olderRealPeriod);
+  });
+
+  it('end-to-end: the full generate-then-backdate sequence produces logs only on Mon/Wed/Fri, matching what lib/habit-store.tsx\'s debug reducer cases now do', () => {
+    const generationPeriods = widenedForDevSimulation('h1', freshlyCreatedMwf, today);
+    const pattern = scenarioPattern('missTwoConsecutive', 'h1', generationPeriods, today);
+    const logs = simulatedLogsFor('h1', pattern, 1, `${today}T12:00:00.000Z`);
+    for (const l of logs) {
+      expect([1, 3, 5]).toContain(weekdayOf(l.date));
+    }
+    const finalSchedulePeriods = backdatedSchedulePeriod('h1', freshlyCreatedMwf, today, pattern.map((d) => d.date));
+    // The persisted period now genuinely covers every date the pattern used.
+    const persisted = finalSchedulePeriods.find((p) => p.id === 'h1-dev-simulated-schedule');
+    expect(persisted !== undefined && persisted.effectiveFrom <= pattern[0].date).toBe(true);
   });
 });
