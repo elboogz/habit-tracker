@@ -1,9 +1,10 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, TextInput } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ReminderTimesEditor } from '@/components/reminder-times-editor';
+import { ScheduleDaysEditor } from '@/components/schedule-days-editor';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -17,7 +18,6 @@ import { EMOJI_CHOICES, type Habit, type HabitType, type ScheduleDays } from '@/
 
 const EMOJI_COLUMNS = 5;
 const EMOJI_GAP = 8;
-const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 export default function HabitFormScreen() {
   const router = useRouter();
@@ -58,18 +58,6 @@ export default function HabitFormScreen() {
     setReducedTarget((current) => Math.min(current, clamped - 1));
   }
 
-  function toggleScheduleDay(weekday: number) {
-    setSelectedDays((current) => {
-      if (current.includes(weekday)) {
-        // Keep at least one day selected -- a habit with none would never have a Scheduled
-        // Opportunity again, an unrecoverable dead end this UI shouldn't allow reaching.
-        if (current.length === 1) return current;
-        return current.filter((day) => day !== weekday);
-      }
-      return [...current, weekday].sort((a, b) => a - b);
-    });
-  }
-
   const emojiSize =
     emojiRowWidth > 0 ? (emojiRowWidth - EMOJI_GAP * (EMOJI_COLUMNS - 1)) / EMOJI_COLUMNS : 44;
 
@@ -100,7 +88,14 @@ export default function HabitFormScreen() {
         addSchedulePeriod(editingHabit.id, nextDays, paused);
       }
     } else {
-      addHabit({ name: trimmed, emoji, type, targetCount, reducedTarget, reminderTimes });
+      const newHabit = addHabit({ name: trimmed, emoji, type, targetCount, reducedTarget, reminderTimes });
+
+      // Same append-only, only-if-different-from-default convention as the edit branch above --
+      // a habit created with the default all-seven selection writes no period, preserving the
+      // existing zero-periods-means-daily behaviour for the ordinary case.
+      if (selectedDays.length !== 7) {
+        addSchedulePeriod(newHabit.id, selectedDays, false);
+      }
     }
     router.back();
   }
@@ -240,47 +235,14 @@ export default function HabitFormScreen() {
             <ReminderTimesEditor times={reminderTimes} onChange={setReminderTimes} />
           </ThemedView>
 
-          {isEditing && editingHabit && (
-            <ThemedView style={styles.section}>
-              <ThemedText type="defaultSemiBold">Schedule</ThemedText>
-              <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
-                Which days count as a Scheduled Opportunity for this habit, and whether it’s paused.
-              </ThemedText>
-              <ThemedView style={styles.weekdayRow}>
-                {WEEKDAY_LABELS.map((label, index) => {
-                  const selected = selectedDays.includes(index);
-                  return (
-                    <Pressable
-                      key={index}
-                      onPress={() => toggleScheduleDay(index)}
-                      style={[
-                        styles.weekdayChip,
-                        { borderColor: colors.icon },
-                        selected && { backgroundColor: colors.tint, borderColor: colors.tint },
-                      ]}>
-                      <ThemedText style={{ color: selected ? colors.background : colors.text, fontWeight: '600', fontSize: 13 }}>
-                        {label}
-                      </ThemedText>
-                    </Pressable>
-                  );
-                })}
-              </ThemedView>
-              <ThemedView style={styles.pauseRow}>
-                <ThemedText>Paused</ThemedText>
-                <Switch
-                  value={paused}
-                  onValueChange={setPaused}
-                  trackColor={{ false: colors.icon, true: colors.tint }}
-                  thumbColor="#fff"
-                />
-              </ThemedView>
-              {hasActiveChallenge && (
-                <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
-                  This habit has an active challenge. Schedule changes apply from today onward and never rewrite past days.
-                </ThemedText>
-              )}
-            </ThemedView>
-          )}
+          <ScheduleDaysEditor
+            selectedDays={selectedDays}
+            onChangeSelectedDays={setSelectedDays}
+            showPaused={isEditing}
+            paused={paused}
+            onChangePaused={setPaused}
+            activeChallengeNotice={isEditing && hasActiveChallenge}
+          />
 
           {isEditing && hasActiveChallenge && (
             <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
@@ -363,23 +325,6 @@ const styles = StyleSheet.create({
   stepperValue: {
     minWidth: 110,
     textAlign: 'center',
-  },
-  weekdayRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  weekdayChip: {
-    flex: 1,
-    aspectRatio: 1,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pauseRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
   },
   saveButton: {
     paddingVertical: 16,

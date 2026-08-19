@@ -169,6 +169,22 @@ describe('scheduledOpportunitiesUpTo', () => {
   });
 });
 
+describe('habit created with a non-daily schedule from the start (creation-time schedule picker)', () => {
+  it('has no gap: a period whose effectiveFrom coincides with the local day of createdAt covers every date from creation onward, so none of them fall back to the implicit-daily default', () => {
+    // Mirrors what app/habit-form.tsx's creation path now does: addSchedulePeriod's effectiveFrom
+    // is always dayKey() (today), which for a brand-new habit is the same local day as
+    // habit.createdAt -- so the period's reach and the creation floor start on the same day.
+    const h = habit({ createdAt: '2026-05-01T00:00:00.000Z' }); // a Friday
+    const periods = [period({ effectiveFrom: '2026-05-01', days: [1, 3, 5] })];
+    const result = scheduledOpportunitiesUpTo(h, periods, '2026-05-14');
+    expect(result).toEqual(['2026-05-01', '2026-05-04', '2026-05-06', '2026-05-08', '2026-05-11', '2026-05-13']);
+    // If the period didn't cover the creation day itself, 2026-05-01 (a Friday, the creation day)
+    // and 2026-05-02 (Saturday) would both resolve under the zero-periods daily default instead --
+    // the second of those would then wrongly appear in the result.
+    expect(result).not.toContain('2026-05-02');
+  });
+});
+
 describe('scheduledOpportunitiesInWindow (windowed counterpart, motivated by Consistency)', () => {
   it('matches scheduledOpportunitiesUpTo when the window covers the habit\'s whole lifetime', () => {
     const h = habit({ createdAt: '2026-05-01T00:00:00.000Z' }); // a Friday
