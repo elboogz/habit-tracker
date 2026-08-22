@@ -472,6 +472,8 @@ Not built in this pass.
 - It will be batched into one amendment together with the `steady` and `rebuilding` narrative changes already pending (tracked outside this document).
 - **A narrow exemption to the em-dash rule in `CLAUDE.md`**, for text that names the em dash character in order to prohibit it (`supabase/functions/*/index.ts`'s `STYLE_RULES` string, which must contain a literal `(—)` for the instruction to Claude to be legible). `CLAUDE.md` was not edited.
 
+**Resolved (commit `3660f87`).** All three batched narrative changes (`steady`, `recovering`, `rebuilding`) and the `CLAUDE.md` em-dash exemption described above were subsequently approved and applied. `recovering`'s narrative now reads "You're finding your way back. That's the part that counts." — the em dash quoted above is historical, not current.
+
 ### Additional copy findings flagged during the audit, not fixed
 
 Surfaced while fixing the em-dash punctuation on the same lines; the punctuation fix was applied, the flagged content was not touched.
