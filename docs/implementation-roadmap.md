@@ -178,6 +178,8 @@ Edge-case testing across the complete feature set.
 
 Security audit pass.
 
+**Component-test infrastructure gap (recorded 2026-08-22).** Per `CLAUDE.md`, `npm test` currently covers only pure functions under `lib/domain/*.test.ts` plus a generator test — there are no component tests for any screen. UI-layer fixes are consequently verified by a manual device pass rather than an automated one: three recent fixes landed this way, with no regression coverage behind them — the schedule picker added at habit creation, the Habit History display defects, and the Edit Habit cancel control plus date correction panel changes. Recorded here as a gap to weigh during final QA, not a directive to build component-test infrastructure now.
+
 ---
 
 ## Phase 10 — Launch preparation
