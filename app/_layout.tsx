@@ -69,7 +69,7 @@ function RootNavigator() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen
           name="habit-form"
-          options={{ presentation: 'modal', headerShown: true, title: 'Habit', headerBackTitle: 'Cancel' }}
+          options={{ presentation: 'modal', headerShown: true, title: 'Habit' }}
         />
         <Stack.Screen name="habit/[id]" options={{ headerShown: true }} />
       </Stack.Protected>

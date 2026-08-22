@@ -1,4 +1,5 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { HeaderBackButton } from '@react-navigation/elements';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -115,6 +116,16 @@ export default function HabitFormScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      {/* A modal-presented screen is the root of its own presented stack, so native-stack never
+          synthesizes an automatic back chevron for it (unlike a normal push) -- an explicit
+          headerLeft is the only way to get a visible exit here, on any platform. */}
+      <Stack.Screen
+        options={{
+          headerLeft: () => (
+            <HeaderBackButton label="Cancel" tintColor={colors.tint} onPress={() => router.back()} />
+          ),
+        }}
+      />
       <SafeAreaView style={styles.safeArea} edges={['bottom', 'left', 'right']}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <ThemedText type="title">{isEditing ? 'Edit habit' : 'New habit'}</ThemedText>

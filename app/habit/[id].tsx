@@ -227,17 +227,21 @@ function DayCorrectionPanel({
   const colors = Colors[colorScheme ?? 'light'];
   const currentCount = countForDay(logs, habit.id, date);
 
-  function requestSetAmount(amount: number) {
+  function requestSetAmount(amount: number, onDone?: () => void) {
     if (amount === 0 && currentCount > 0) {
       confirmAction(
         'Remove this completion?',
         `This removes your logged completion for ${formatLogDate(date)}.`,
         'Remove',
-        () => onSetAmount(0),
+        () => {
+          onSetAmount(0);
+          onDone?.();
+        },
       );
       return;
     }
     onSetAmount(amount);
+    onDone?.();
   }
 
   if (habit.type === 'simple') {
@@ -246,11 +250,7 @@ function DayCorrectionPanel({
       <ThemedView style={[styles.correctionPanel, { borderColor: colors.tint }]}>
         <ThemedText type="defaultSemiBold">{formatLogDate(date)}</ThemedText>
         <Pressable
-          onPress={() => {
-            requestSetAmount(done ? 0 : 1);
-            if (done) return; // wait for confirmAction before closing
-            onClose();
-          }}
+          onPress={() => requestSetAmount(done ? 0 : 1, onClose)}
           style={({ pressed }) => [
             styles.correctionToggle,
             { borderColor: colors.tint },
@@ -260,6 +260,9 @@ function DayCorrectionPanel({
           <ThemedText style={{ color: done ? colors.background : colors.text, fontWeight: '600' }}>
             {done ? 'Mark not done' : 'Mark done'}
           </ThemedText>
+        </Pressable>
+        <Pressable onPress={onClose} style={({ pressed }) => [pressed && { opacity: 0.6 }]}>
+          <ThemedText style={{ color: colors.tint, fontWeight: '600' }}>Done</ThemedText>
         </Pressable>
       </ThemedView>
     );
