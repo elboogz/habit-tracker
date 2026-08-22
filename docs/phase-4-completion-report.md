@@ -2,6 +2,8 @@
 
 Implements `docs/phase-4-plan.md` (the approved plan, including the suppression revision) in full. All ten commits in the approved sequence (§9) are complete. Phase 5 has not begun — no AI coaching changes, no notification copy, no reflection-prompt rewrites, no challenge-tolerance changes.
 
+**Start here if you're new to this document.** What follows is the chronological working record: the original ten-commit delivery, then roughly twenty post-completion investigations, fixes, and product decisions accreted across many sessions of on-device testing. For what actually shipped, what's deliberately deferred and why, and final verification, read **"Phase 4 closure"** at the end of this document first. Everything between here and there is provenance, kept for the record, not a status report.
+
 ## Commits completed
 
 1. **`1dd192b`** — data model + migrations, no behaviour change. `LapseReasonKey`/`LapseReasonEntry`, `HabitState.lapseReasons`, `Habit.reducedTarget`, `HabitLog.reduced`, `migrateLapseReasons`, and `supabase/phase-4-recovery-flow-schema.sql`.
@@ -671,3 +673,66 @@ Surfaced while fixing the em-dash punctuation on the same lines; the punctuation
 **Scope respected.** Phase 5 not started, not recommended. Momentum confirmation mechanism untouched. No copy variation work started beyond the one approved help-text addition and its accompanying em-dash fix, both developer-facing text outside the user-facing copy contract.
 
 **Scope respected.** Phase 5 not started, not recommended. No domain, Momentum, Recovery, or Consistency logic touched — purely presentation. `tintColorDark` unchanged.
+
+## Phase 4 closure
+
+**Status: closed 2026-08-22.** This section is the durable summary a fresh reader should start from — everything above is the chronological working record, kept for provenance. It is not rewritten here; this section only states where each thread ended up, verified against the current codebase rather than restated from memory of the sections above.
+
+### What Phase 4 delivered
+
+- **The approved Recovery Flow (original 10 commits).** Lapse detection (`openLapse`), all six recovery-card actions (Continue, Do a smaller version, Skip, Pause, Adjust the schedule, Reflect), per-habit suppression until the next Scheduled Opportunity, reduced completions for measurable habits, the schedule editor (create/pause via effective-dated periods), and retroactive entry (calendar tap targets plus `DayCorrectionPanel`).
+- **Roughly twenty post-completion rounds**, all driven by on-device testing, spanning: three Momentum domain-layer defects (developer-tool `createdAt` backdating, the `rebuilding`-unreachable evaluation-precedence bug, and the today-completion monotonicity blocker — resolved via the positive-family evidence floor plus the current-day scheduling-fact/evidence-judgment split); Consistency and streak both becoming schedule-aware (both approved as corrections to an omission in the locked spec's Scheduled-Opportunity list, not new product decisions, each shipped alongside a frozen `calendar*` shim for the Edge Functions); two instances of Momentum State wrongly gating an unrelated concept's display (Recovery Rate, then Consistency), both removed; a third calendar cell state distinguishing non-scheduled from missed days on Habit Detail; a production data audit and remediation (103 pre-fix `habit_logs` rows across 7 habits, corrected and independently re-verified); a second read-only audit (off-schedule logs) closed 2026-08-22 with zero rows; three Habit History display bugs found in dark-theme on-device testing; and a fix ensuring developer-simulation tools backdate schedule periods, not just `createdAt`.
+- **Three approved copy amendments** — the `steady`/`recovering`/`rebuilding` Momentum narrative sentences and the `CLAUDE.md` em-dash exemption scoped to the `STYLE_RULES` literal — applied in commit `3660f87`.
+- **Two acceptance-pass fixes tracked in `docs/implementation-roadmap.md` rather than this document**, since they surfaced during the general Acceptance Gate pass rather than Phase-4-specific on-device testing, but both touch Phase 4 deliverables directly: a missing visible Cancel affordance on the Edit Habit modal (`app/habit-form.tsx`, a `presentation: 'modal'` native-stack limitation, not a missing gesture — the swipe-down dismissal always worked), and a missing no-op close control in `DayCorrectionPanel`'s simple-habit branch, mirroring the count-based branch's existing "Done" button. See that document's Acceptance Gate section for the full account.
+
+### Every item this document has called open, pending, or deferred — checked against current code, not restated from memory
+
+**Resolved:**
+- The on-device acceptance pass called for at original completion — done, across the seven rounds listed above.
+- Both "open product decisions blocking Phase 5" (positive-family evidence floor admissibility; trapped-`insufficient_data` treatment) — both ruled and implemented (the floor) or ruled and drafted (the trapped-state discriminator; see its own deferred-implementation entry below).
+- `consistency()`'s missing creation-date floor (escalated in Post-completion fix 4) — resolved by fix 5's schedule-aware `consistency()`, verified just now: `lib/domain/habit-stats.ts`'s `consistency()` calls `scheduledOpportunitiesInWindow`, not `recentHistory`.
+- Streak becoming schedule-aware — resolved (amendment approved, implemented, verified).
+- Both Momentum-gates-a-non-Momentum-concept instances (Recovery Rate, then Consistency's raw-count-vs-percentage split) — resolved, confirmed the second was the last instance.
+- The pre-`backdatedCreatedAt` production data audit — resolved (migration applied 2026-08-18, verified two independent ways).
+- The off-schedule log audit — resolved 2026-08-22, zero rows.
+- The three pending narrative amendments plus the `CLAUDE.md` em-dash exemption — resolved, commit `3660f87`, verified directly against the file (see the "Pending amendments, batched, not applied" section above).
+- Heatmap adjacency, Habit Detail half — resolved via the third calendar cell state on `HabitCalendar`. The Progress half is not resolved; see the deliberately-shipping list below.
+- The bonus-completions open question — resolved as a standing decision (extra completions on non-scheduled days remain permitted, counted toward Total Completions, excluded from Scheduled Opportunity adherence), now backed by an audit confirming zero rows are currently affected.
+
+**Deliberately shipping as-is** — decisions or deferrals, not defects, each checked against current code just now rather than assumed:
+- **The trapped `insufficient_data` presentation.** Decision settled (a condition-aware narrative override triggered at 5+ lifetime Scheduled Opportunities with at least one completion); implementation deferred. Verified: `MOMENTUM_COPY.insufficient_data` in `app/(tabs)/progress.tsx` still ships one static sentence ("Still gathering enough days to show a pattern.") with no conditional branch. Deferred to the post-tester copy pass, per the project's standing decision to pause copy work.
+- **Copy variation sets for the six non-split states.** `CLAUDE.md`'s variation contract (deterministic, seed-based selection among interchangeable sentences) is specified but not built for any state. Verified: every `MOMENTUM_COPY` entry still has exactly one sentence. Progress-card variation is explicitly first-and-independent per the contract's own rule 4; not started.
+- **Rhythm surfacing and label.** Not a deferral — a closed decision. Investigated as an eighth `MomentumStateKey` and rejected on architectural grounds (see "Rhythm: an eighth Momentum State investigated and rejected" above). Verified: no `Rhythm` key exists in `MomentumStateKey`, `MOMENTUM_COPY`, or any fixture.
+- **The third heatmap state on Progress.** `HabitCalendar` (Habit Detail) has it; `HabitHeatmap` (`components/habit-heatmap.tsx`, used by Progress) does not — verified zero references to `scheduled`/`ScheduledDayStatus` in that file. Deferred pending an on-device legibility check at the heatmap's smaller (16px) cell size.
+- **Recovery Time wording and precision.** "Averages {X.X} day(s) to bounce back" (Progress) and "avg. days to recover" (Habit Detail), one decimal place — verified current in both files. Illustrative per the original completion's copy note, not final-polished; deferred with the rest of the paused copy work.
+- **The Recovery Rate suppression phrasing.** "Not enough recovery history yet" / "Recovery history still building" (`recoveryRateText`, `app/(tabs)/progress.tsx`) — verified current. Same status as Recovery Time: illustrative, not final.
+- **"Keep your run alive."** `app/(tabs)/index.tsx`'s challenge banner — verified still present verbatim. Flagged during the em-dash audit as prohibited loss-framing under the copy variation contract's Rule 1; not fixed, because copy work is paused project-wide rather than fixed selectively ahead of the rest.
+- **The two streak-contrast lines.** Progress's "No data yet" empty state and onboarding's "Track your progress" row — both verified still present verbatim. Not prohibited by an existing rule; awaiting a product decision on whether streak-contrast belongs on Progress at all.
+- **The automated copy-contract test.** Design fully specified (glob-based file discovery so new files can't silently join uncovered; exact-literal `STYLE_RULES` exemption rather than a substring match; covering the em-dash rule and Rule 1's prohibited-framings list together). Verified no such test file exists in the repository. Not built.
+- **The client versus Edge Function divergence, for both Consistency and streak.** Verified directly: both `supabase/functions/ai-insights/index.ts` and `supabase/functions/send-coaching-push/index.ts` still call `calendarConsistency`/`calendarStreakForHabit` — the frozen, pre-schedule-aware behaviour — while the client uses the schedule-aware versions. Recorded as one Phase 5 precondition-review item (one whitelist-extension fix resolves both), not fixed here.
+
+**Accepted standing risks** — recorded, not being revisited, not defects:
+- Cross-device/reinstall gap for Continue/Dismiss suppression (§8.6) — bounded to one Scheduled Opportunity's worth of exposure.
+- `lib/recovery-card-dismissals.ts` not scoped per-user — accepted as harmless (habit IDs are globally-unique), an inconsistency with the app's per-user storage convention but not worth fixing per the original plan.
+- `tintColorDark` being pure white — Product Polish scope (app-wide colour palette), not a Phase 4 item.
+
+### Final verification (2026-08-22, run fresh for this closure, not carried over from an earlier section)
+
+- `npm test` — 10 suites, 216 tests, all passing.
+- `npx tsc --noEmit` — clean, no output.
+- `npm run lint` — clean, exit 0.
+- `npx expo export --platform web` — bundles cleanly (1291 modules), 15 static routes present.
+
+### Tagging: options, no action taken
+
+`phase-4-complete` already exists as an annotated tag at the original documentation commit (the end of the 10-commit sequence); substantial work — everything in "What Phase 4 delivered" above beyond the first bullet — sits after it in history. Three options, not mutually reinforcing, decision deferred to the account owner:
+
+1. **Move `phase-4-complete` to the current commit.** The tag then means "Phase 4, fully done, including every post-completion fix." Simplest single-tag semantics. Cost: rewrites what the tag has meant since it was first created — anyone (a script, a `git checkout phase-4-complete`, a memory of "what shipped at that tag") that already relied on it pointing to the original 10-commit state loses that reference except via reflog or the remote's tag-history API.
+2. **Add a second tag** (e.g. `phase-4-final`) **at the current commit, leaving `phase-4-complete` untouched.** Preserves both historical markers non-destructively — `phase-4-complete` still means exactly what it always has, the new tag marks "everything post-completion also settled." Cost: two tags for one phase needs a naming/reading convention a future reader has to learn, and this document's own "Confirmation" section (above) currently states only one tag was created — that line would read as stale unless a note is added pointing to the second tag.
+3. **Leave tagging as-is; let this closure section carry the current state.** Zero git history disruption. Cost: `git checkout phase-4-complete` yields the original 10-commit state only — missing every post-completion fix, including real defect corrections (the `createdAt` backdating bug, the `rebuilding`-unreachable bug, among others) — so the tag alone would materially misrepresent "what Phase 4 shipped" to anyone who trusts it without also reading this report.
+
+Not tagging in this pass, per instruction.
+
+### Explicit non-action
+
+Phase 5 has not begun. This closure does not authorize starting it — that remains a separate, unmade decision, exactly as every post-completion section above has maintained throughout.
