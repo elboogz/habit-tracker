@@ -56,11 +56,19 @@ const MOMENTUM_COPY: Record<MomentumStateKey, { badge: string; narrative: string
   },
 };
 
-/** Never a bare, possibly-shaming number — mirrors the domain layer's own displayAsPercentage rule rather than reimplementing it. */
-function recoveryRateText(result: RecoveryRateResult): string {
-  if (result.resolvedCount === 0) return 'Not enough recovery history yet';
-  if (!result.displayAsPercentage) return 'Recovery history still building';
-  return `${Math.round((result.rate ?? 0) * 100)}%`;
+/**
+ * Null when there's nothing to say yet -- the line is omitted entirely rather than stating an
+ * absence, mirroring consistencyText's null convention below. Below the percentage threshold
+ * (too few resolved instances, or the rolling rate itself is too low to show without shaming --
+ * see RECOVERY_CONFIG's own comments), a recovery count still renders on its own, unlabelled,
+ * rather than repeating the "Recovery rate:" prefix over a non-rate sentence.
+ */
+function recoveryRateLine(result: RecoveryRateResult, recoveryCount: number): string | null {
+  if (recoveryCount === 0) return null;
+  if (result.displayAsPercentage) {
+    return `Recovery rate: ${Math.round((result.rate ?? 0) * 100)}% · ${recoveryCount} recover${recoveryCount === 1 ? 'y' : 'ies'}`;
+  }
+  return `${recoveryCount} recover${recoveryCount === 1 ? 'y' : 'ies'} so far`;
 }
 
 /** Null when the window contains no Scheduled Opportunities -- distinct from 0%, see consistency()'s doc comment. */
@@ -102,6 +110,7 @@ function HabitSnapshot({
   const rate = recoveryRate(habit, schedulePeriods, logs, today);
   const recoveryCount = recoveryEvents(habit, schedulePeriods, logs, today).length;
   const avgRecoveryDays = averageRecoveryTime(habit, schedulePeriods, logs, today);
+  const recoveryLine = recoveryRateLine(rate.rolling, recoveryCount);
 
   return (
     <ThemedView style={{ gap: 6 }}>
@@ -119,13 +128,12 @@ function HabitSnapshot({
         total completions
       </ThemedText>
 
-      <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
-        Recovery rate: {recoveryRateText(rate.rolling)}
-        {recoveryCount > 0 ? ` · ${recoveryCount} recover${recoveryCount === 1 ? 'y' : 'ies'}` : ''}
-      </ThemedText>
+      {recoveryLine !== null && (
+        <ThemedText style={{ color: colors.icon, fontSize: 13 }}>{recoveryLine}</ThemedText>
+      )}
       {avgRecoveryDays !== null && (
         <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
-          Averages {avgRecoveryDays.toFixed(1)} day{avgRecoveryDays === 1 ? '' : 's'} to bounce back
+          Returns in {avgRecoveryDays.toFixed(1)} day{avgRecoveryDays === 1 ? '' : 's'} on average
         </ThemedText>
       )}
     </ThemedView>
@@ -344,8 +352,8 @@ export default function ProgressScreen() {
               <ThemedText style={{ fontSize: 32 }}>📊</ThemedText>
               <ThemedText type="defaultSemiBold">No data yet</ThemedText>
               <ThemedText style={{ color: colors.icon, textAlign: 'center' }}>
-                Once you start logging on the Today tab, you&apos;ll see how you&apos;re really doing here, not just
-                whether you kept a streak, but how you come back after a day off.
+                Once you start logging on the Today tab, you&apos;ll see your momentum, your consistency, and your
+                pattern of returning.
               </ThemedText>
             </ThemedView>
           )}

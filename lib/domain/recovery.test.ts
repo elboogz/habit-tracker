@@ -78,11 +78,12 @@ describe('example A -- miss then complete', () => {
     expect(recoveryEvents(h, [], logs, today)).toEqual([{ habitId: 'h1', date: '2026-07-03' }]);
   });
 
-  it('closes a Lapse with a 1-day recovery time', () => {
+  it('closes a Lapse with a 1-day recovery time, but a single closed Lapse is below the Recovery Time display threshold', () => {
     expect(closedLapses(h, [], logs, today)).toEqual([
       { habitId: 'h1', firstMissedDate: '2026-07-02', recoveredDate: '2026-07-03', recoveryTimeDays: 1, missedOpportunityCount: 1 },
     ]);
-    expect(averageRecoveryTime(h, [], logs, today)).toBe(1);
+    // RECOVERY_CONFIG.minClosedLapsesForRecoveryTime is 2 -- see "Recovery Time display threshold" below.
+    expect(averageRecoveryTime(h, [], logs, today)).toBeNull();
   });
 
   it('is below the sample-size threshold for a displayed percentage', () => {
@@ -156,8 +157,11 @@ describe('example D -- miss, pause, resume, then complete', () => {
     ]);
   });
 
-  it('recovery time spans the full calendar gap including the paused days', () => {
-    expect(averageRecoveryTime(h, periods, logs, today)).toBe(4);
+  it('recovery time spans the full calendar gap including the paused days, though a single closed Lapse stays below the display threshold', () => {
+    expect(closedLapses(h, periods, logs, today)).toEqual([
+      { habitId: 'h1', firstMissedDate: '2026-07-02', recoveredDate: '2026-07-06', recoveryTimeDays: 4, missedOpportunityCount: 1 },
+    ]);
+    expect(averageRecoveryTime(h, periods, logs, today)).toBeNull();
   });
 });
 
@@ -232,6 +236,29 @@ describe('display thresholds', () => {
     expect(rate.lifetime.recoveredCount).toBe(2);
     expect(rate.lifetime.rate).toBeCloseTo(2 / 3);
     expect(rate.lifetime.displayAsPercentage).toBe(true);
+  });
+});
+
+describe('Recovery Time display threshold', () => {
+  it('a single closed Lapse is below RECOVERY_CONFIG.minClosedLapsesForRecoveryTime -- no average shown', () => {
+    const h = habit('2026-01-01');
+    const logs = [log('h1', '2026-01-01'), log('h1', '2026-01-03')]; // 01-02 missed, recovered 01-03
+    const today = '2026-01-03';
+    expect(closedLapses(h, [], logs, today)).toHaveLength(1);
+    expect(averageRecoveryTime(h, [], logs, today)).toBeNull();
+  });
+
+  it('exactly 2 closed Lapses meets the threshold -- an average is shown', () => {
+    const h = habit('2026-01-01');
+    const logs = [
+      log('h1', '2026-01-01'),
+      log('h1', '2026-01-03'), // 01-02 missed, recovered 01-03 (1-day Lapse)
+      log('h1', '2026-01-04'),
+      log('h1', '2026-01-07'), // 01-05, 01-06 missed, recovered 01-07 (2-day Lapse)
+    ];
+    const today = '2026-01-07';
+    expect(closedLapses(h, [], logs, today)).toHaveLength(2);
+    expect(averageRecoveryTime(h, [], logs, today)).toBe(1.5);
   });
 });
 

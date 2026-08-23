@@ -159,7 +159,11 @@ export function closedLapses(
   return result;
 }
 
-/** Mean Recovery Time across every lifetime closed Lapse; null if none have closed yet. */
+/**
+ * Mean Recovery Time across every lifetime closed Lapse; null below
+ * RECOVERY_CONFIG.minClosedLapsesForRecoveryTime, not merely when none have closed yet -- a
+ * single-Lapse average states more precision than one data point supports.
+ */
 export function averageRecoveryTime(
   habit: Habit,
   periods: HabitSchedulePeriod[],
@@ -167,7 +171,7 @@ export function averageRecoveryTime(
   today: string,
 ): number | null {
   const lapses = closedLapses(habit, periods, logs, today);
-  if (lapses.length === 0) return null;
+  if (lapses.length < RECOVERY_CONFIG.minClosedLapsesForRecoveryTime) return null;
   const total = lapses.reduce((sum, lapse) => sum + lapse.recoveryTimeDays, 0);
   return total / lapses.length;
 }

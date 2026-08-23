@@ -300,7 +300,7 @@ export default function TodayScreen() {
                       <ThemedText style={{ color: colors.icon, fontSize: 14 }}>
                         {progress.habits.map((h) => h.emoji).join(' ')}{' '}
                         {progress.habits.length === 1 ? progress.habits[0].name : `${progress.habits.length} habits`}
-                        , {progress.todayDone ? "today's set is locked in" : 'log them all today to keep your run alive'}
+                        , {progress.todayDone ? "today's set is locked in" : "today's set is still open"}
                       </ThemedText>
                     </ThemedView>
                   </Pressable>

@@ -10,6 +10,14 @@ export const RECOVERY_CONFIG = {
   lowRecoveryRateShameThreshold: 0.3,
   /** Size of the rolling Recovery Rate window, in resolved Recoverable Lapse Opportunities (not calendar days). */
   rollingWindowOpportunities: 10,
+  /**
+   * Fewer closed Lapses than this: never show a Recovery Time average. A distinct denominator
+   * from minResolvedLapsesForPercentage above (closed Lapses are maximal missed runs; resolved
+   * Recoverable Lapse Opportunities are pairwise and can be several per Lapse) -- the value 3 was
+   * deliberately not reused. An average from a single Lapse isn't an average; 2 is the minimum at
+   * which the word means anything.
+   */
+  minClosedLapsesForRecoveryTime: 2,
 } as const;
 
 export const MOMENTUM_CONFIG = {

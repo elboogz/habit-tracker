@@ -7,6 +7,7 @@ describe('RECOVERY_CONFIG', () => {
     expect(RECOVERY_CONFIG.minResolvedLapsesForPercentage).toBe(3);
     expect(RECOVERY_CONFIG.lowRecoveryRateShameThreshold).toBe(0.3);
     expect(RECOVERY_CONFIG.rollingWindowOpportunities).toBe(10);
+    expect(RECOVERY_CONFIG.minClosedLapsesForRecoveryTime).toBe(2);
   });
 });
 
