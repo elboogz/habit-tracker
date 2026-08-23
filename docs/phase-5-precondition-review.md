@@ -105,3 +105,77 @@ Item 1 matters most: Phase 5 must rewrite prompts in **both** functions, and `CL
 Nothing recorded here blocks Phase 5 permanently. Three decisions genuinely need making before a plan can be written (A1-A3). Four constraints should shape the plan rather than be discovered mid-build (B1-B4). C1 is a shipping specification deviation worth deciding on independently of whether Phase 5 is approved.
 
 Phase 5 has not begun. This document does not authorize starting it.
+
+---
+
+# D. Mechanism decisions
+
+**Follow-up analysis, 2026-08-24. All three conclusions below are accepted. Still analysis only — Phase 5 has not been started.**
+
+A1 changes the shape of the mechanism question. Because `send-coaching-push` is cron-triggered with no client in the loop, "pass the facts in as data" cannot serve it, so the whitelist extension is required for that path regardless of what the in-app path does. That makes three questions live: whether the data route retains any purpose for `ai-insights`, how output validation gets its enumerable set if the functions compute their own facts, and what would make the whitelist extension safe enough to rely on given B1.
+
+## D1. One mechanism for both functions, not two
+
+**The `ai_insights` nudge cache is shared between the two functions, and that is decisive on its own.**
+
+`send-coaching-push` checks `ai_insights` for a nudge created within `NUDGE_FRESHNESS_HOURS` (20) and reuses that row's content rather than generating (`index.ts` lines 281-292). When it does generate, it inserts a row with `kind: 'nudge'` (lines 297-306). `ai-insights` reads and writes the same rows under the same 20-hour window.
+
+The nudge is therefore **one artifact with two producers**. A cron-generated nudge is served to the in-app Coach card for up to 20 hours, and an in-app-generated nudge is sent as the push. If the two producers ground on facts derived by different mechanisms, the single nudge a user sees on a given day has nondeterministic provenance: derived one way or the other depending on which producer ran first. Any validation would have checked it against whichever facts object that producer happened to hold. This is a correctness problem rather than an inelegance, and it is invisible in testing because each path looks correct in isolation.
+
+Code reuse is the secondary argument: once the block is inlined it is spliced identically into both files by the same `buildGeneratedBlock()`, so `ai-insights` gains the capability whether it uses it or not.
+
+Two genuine advantages of the data route were considered and rejected:
+
+- *The client's local-first state can be newer than Postgres.* A just-logged completion may not have flushed, so server-computed facts could miss it. Rejected: the nudge caches for roughly 20 hours, so lagging the most recent log by minutes is immaterial at that cadence, and the Phase 4 current-day fix already makes today's unlogged opportunity read as pending rather than as a miss, which is precisely the failure this would otherwise produce.
+- *It avoids widening `ai-insights`' database reads.* Rejected as a false saving: the read widening is required for `send-coaching-push` regardless, so the work happens once either way, and reusing it costs less in total than maintaining two paths.
+
+**Decision: extend the whitelist for both functions. The data route is dropped.**
+
+## D2. `buildCoachFacts` gives the enumerable set without the round trip
+
+The property output validation needs was never "the payload came from the client". It is that **at validation time there exists a known, finite, enumerable set of numbers the model was permitted to state**. What guarantees that is a single pure producer with a declared return type. The transport is irrelevant to it.
+
+With `buildCoachFacts(habits, logs, schedulePeriods, lapseReasons, today): CoachFacts` as the only producer:
+
+- `CoachFacts` is a closed type, so the enumerable set is its leaf numeric fields: mechanically derivable, and pinnable by a test.
+- `validateCoachOutput(text, facts)` receives the same object.
+- Construction, generation, and validation happen in one process, one scope, one moment. There is no serialization boundary between building the facts and checking the output against them.
+
+This is **stronger** than the client round trip on that last point, not merely equivalent: across a round trip the payload is JSON-parsed at the boundary, and nothing enforces at runtime that the received shape still matches `CoachFacts` without adding a schema check, which would be a validator written to protect the validator.
+
+`buildCoachFacts` in `lib/domain/`, inlined into both functions, also means the client, `ai-insights`, and `send-coaching-push` produce byte-identical facts from identical inputs. That is the existing single-source-of-truth rule applied one level up from the individual metrics. Placing `validateCoachOutput` alongside it resolves B3 as a side effect: both are pure and Jest-testable before being inlined.
+
+### Four caveats on enumerability
+
+These are the actual design work, and belong in the Phase 5 plan rather than being met during implementation.
+
+1. **Numeric normalization.** A rate of `0.6` may legitimately render as "60%", "60", or "0.6"; a count of `12` may render as "twelve". Membership checking needs an expansion and normalization step, not string equality against the raw values.
+2. **Legitimately non-fact numerals.** Dates, durations ("3 days"), ordinals, and "the first week" are valid output containing numbers that are not in the facts object. Without an allowlist policy the validator rejects valid responses.
+3. **Keep `CoachFacts` flat and numeric-leaved.** Enumerability degrades if the type carries free-form strings or unbounded nested structures. Per-habit arrays are acceptable provided each element's shape is fixed.
+4. **The mechanism catches invented statistics, not invented characterizations.** "You have recovered more than half the time", derived from a rate of `0.6`, contains no numeral to check. This is the honest limit of numeric-membership validation. **It must be stated in the Phase 5 plan rather than discovered by a tester.** If characterization accuracy needs enforcing, that is separate work with a different mechanism, and it should be scoped explicitly or ruled out explicitly.
+
+## D3. Making the whitelist extension safe: type-check the generated Edge Function
+
+Three candidates were considered against B1's silent failure mode.
+
+- **A dependency resolver in the generator.** Requires real scope analysis (locals, parameters, destructuring, shadowing) to avoid false positives. A regex approach is fragile, and a proper parser is a new dependency, which the locked specification's global constraints discourage. Disproportionate to the problem.
+- **A test that imports the generated output.** Not possible. The Edge Functions use `npm:` specifiers, `Deno.serve`, and `@ts-nocheck`; an import fails under `jest-expo` for reasons unrelated to the whitelist, so a failure would carry no signal.
+- **Type-checking the generated Edge Function.** The smallest change that works. A referenced-but-unextracted identifier is exactly `TS2304: Cannot find name 'X'`. No parser, no scope analysis, no Deno runtime, no new dependency.
+
+Concretely: extend `scripts/build-edge-functions.test.ts`, which already shells out via `execFileSync`. Per target file, write a checkable copy to a temporary path (strip the `@ts-nocheck` line, replace the two `npm:` imports with local `any` stubs, prepend `declare const Deno: any`), run `npx tsc --noEmit --strict` against it, and assert exit 0.
+
+**Check the whole file, not only the block between the markers.** The block alone references `Habit` and `HabitLog`, which are declared outside it; supplying those types from `lib/habit-types.ts` to make a block-only check pass would hide exactly the drift that matters. Checking the whole file catches both failure classes: the missing-dependency class B1 describes, and the stale-shim class (the `Habit` shim lacking `createdAt` when `isScheduledOpportunity` requires it) that produced Phase 4's deviation 1. A block-only check is the cheaper fallback if the full-file check proves noisy in practice.
+
+What it does not catch is runtime semantics. Declaration ordering is not a genuine risk here, since module-level `const`s evaluate before any `Deno.serve` handler runs, but well-typed-and-wrong logic still needs the domain tests, which is where that belongs.
+
+**Sequencing: build the guard before extending the whitelist, not after.** It should pass against the current `day-key.ts` + `habit-stats.ts` block first, so that a failure on the first extension is unambiguously attributable to the extension.
+
+## D4. Accepted approach and ordering
+
+1. **Single mechanism for both functions: extend the whitelist.** The shared nudge cache makes per-function mechanisms actively harmful.
+2. **`buildCoachFacts` and `CoachFacts` in `lib/domain/`, with `validateCoachOutput` alongside**, both inlined by the generator.
+3. **Build the type-check guard first.** It is a precondition to (1), not a follow-up to it.
+
+Should Phase 5 be approved, the implementation order is: guard, then `buildCoachFacts` and the validator as pure tested functions, then the whitelist extension, then the database read widening, then the prompt rewrite. Each step is verifiable before the next depends on it, and the first three touch nothing user-facing.
+
+This resolves the mechanism question only. **A2 (Habit Health and the single-hysteresis rule) and A3 (the two non-derivable coach inputs) remain open product decisions**, and C1 (the streak-leading prompts) is being handled separately. Phase 5 has still not begun, and nothing above authorizes starting it.
