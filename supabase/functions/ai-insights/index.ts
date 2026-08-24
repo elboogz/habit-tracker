@@ -31,8 +31,9 @@ const STYLE_RULES =
 const SYSTEM_PROMPTS: Record<Kind, string> = {
   nudge:
     "You are an encouraging, perceptive habit-tracking coach. Given a user's recent habit data, write a short " +
-    '1-3 sentence personalized message: call out one specific strength (a streak or high consistency %) and one ' +
-    `area that could use attention, with a small, concrete suggestion. Be warm and specific, not generic. ${STYLE_RULES}`,
+    '1-3 sentence personalized message: call out one specific strength (a habit the user has been consistent ' +
+    'with, citing its consistency %) and one area that could use attention, with a small, concrete suggestion. ' +
+    `Be warm and specific, not generic. ${STYLE_RULES}`,
   weekly:
     'You are an encouraging, perceptive habit-tracking coach writing a brief weekly reflection from a user’s ' +
     'habit data. In 2-4 short sentences, name the habit they were most consistent with (with the %), one that ' +
@@ -40,7 +41,7 @@ const SYSTEM_PROMPTS: Record<Kind, string> = {
     `specific, and concise. ${STYLE_RULES}`,
   monthly:
     'You are an encouraging, perceptive habit-tracking coach writing a brief monthly reflection from a user’s ' +
-    'habit data. In 3-5 short sentences, summarize their strongest habit this month (with the % or streak), one ' +
+    'habit data. In 3-5 short sentences, summarize their strongest habit this month (with its consistency %), one ' +
     'that needs more attention, any notable trend across the month, and one specific suggestion going forward. ' +
     `Be warm, specific, and concise. ${STYLE_RULES}`,
 };
@@ -285,7 +286,6 @@ Deno.serve(async (req) => {
     const summary = habits.map((habit: HabitRow) => ({
       name: habit.name,
       emoji: habit.emoji,
-      streakDays: calendarStreakForHabit(toDomainHabit(habit), toDomainLogs(logs ?? [])),
       consistencyPct: Math.round(calendarConsistency(toDomainHabit(habit), toDomainLogs(logs ?? []), config.windowDays) * 100),
     }));
 

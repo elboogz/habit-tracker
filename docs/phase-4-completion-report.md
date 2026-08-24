@@ -756,3 +756,69 @@ Not tagging in this pass, per instruction.
 ### Explicit non-action
 
 Phase 5 has not begun. This closure does not authorize starting it — that remains a separate, unmade decision, exactly as every post-completion section above has maintained throughout.
+
+---
+
+## Post-closure: streak-leading coach prompts, a resolved spec deviation (2026-08-24)
+
+Recorded after the Phase 4 closure above, and filed here rather than in `docs/phase-5-precondition-review.md` because it is a correction to shipped behaviour, not Phase 5 design work. Surfaced as item C1 of that review. **Phase 5 has still not begun; this change does not start it.**
+
+### The deviation, and that it was shipping rather than planned
+
+Three hand-maintained prompt strings instructed the AI Coach to lead with streaks:
+
+- `supabase/functions/ai-insights/index.ts`, nudge: *"call out one specific strength (a streak or high consistency %)"*
+- `supabase/functions/send-coaching-push/index.ts`, nudge: the same string, a deliberate duplicate
+- `supabase/functions/ai-insights/index.ts`, monthly: *"summarize their strongest habit this month (with the % or streak)"*
+
+Phase 3 demoted streaks to Habit Detail only, never Today or Progress (see "Wired into the UI as of Phase 3" in `CLAUDE.md`). **This was not a planned-but-unbuilt gap: it was live in production on every nudge**, including the daily push, making the coach the one surface actively foregrounding the metric the rest of the app had deliberately demoted. It also pointed the model at a statistic the client no longer displays prominently, so a user could be told about a streak they would then struggle to find.
+
+### What the functions could actually be pointed at instead
+
+Reported before rewriting, because it constrains the fix. Each function's entire view of the user is the per-habit `summary` object plus the window length and today's date. Before this change that object held `name`, `emoji`, `streakDays` (`calendarStreakForHabit`) and `consistencyPct` (`calendarConsistency`).
+
+Of the metrics the product actually leads on, exactly one was reachable:
+
+- **Consistency** — available, but as the frozen calendar-day `calendarConsistency`, not the schedule-aware `consistency()` every client screen uses.
+- **Total Completions** — not available. `totalCompletions` is absent from `scripts/build-edge-functions.js`'s whitelist; logs are fetched only from `windowStart` so any count would be window-scoped rather than the lifetime never-resetting figure; and hand-rolling it in the Edge Function would reimplement a domain concept outside the domain layer, which `CLAUDE.md` forbids.
+- **Recovery Rate, Recovery Time, Recovery Count, Momentum State, lapse reasons** — not available. `recovery.ts` and `momentum.ts` are not whitelisted, and `lapse_reasons` is never read by either function.
+
+**The honest consequence, accepted rather than worked around: the nudge prompt now has less to work with, not more.** It points at one metric where it previously named two. No instruction was written reaching for Total Completions or Recovery, because the functions cannot supply them and the model would either ignore the instruction or invent the numbers — the exact failure mode Phase 5's output validation exists to catch. The full prompt rewrite grounded on `buildCoachFacts` remains Phase 5 work and was deliberately not pre-empted here.
+
+### The fix
+
+Prompt strings, minimally edited to remove the streak reference and nothing else:
+
+- Both nudges: `(a streak or high consistency %)` becomes `(a habit the user has been consistent with, citing its consistency %)`. The two remain byte-identical to each other, as the duplication comment in `send-coaching-push` requires.
+- Monthly: `(with the % or streak)` becomes `(with its consistency %)`.
+- The weekly prompt already read `(with the %)` and contained no streak reference. Untouched.
+
+**`streakDays` was also dropped from the `summary` payload in both functions.** Prompt instructions are guidance; payloads are facts, and a model shown a streak in its input will cite it eventually whatever the prompt says. Removing the instruction while leaving the number would have fixed the wording and not the behaviour.
+
+Consequence, accepted: `calendarStreakForHabit` remains in the generated block in both files but is now uncalled. This is harmless — `expo lint` does not cover `supabase/` (a direct eslint run there fails on the `npm:` specifiers, so it has never been in scope), both files are `@ts-nocheck`, and it is a plain module-scope function declaration. Trimming it from the whitelist would require a generator change plus regeneration, and belongs in Phase 5 when the whitelist is being reworked anyway.
+
+Copy contract: no streak language, no loss framing, no absence day-counts, no em dashes introduced.
+
+### This raises the stakes of the client/Edge Function Consistency divergence
+
+The `calendarConsistency` versus schedule-aware `consistency()` divergence is already recorded in the closure above and as item C2 of the precondition review. **This change makes it materially more exposed.** `calendarConsistency` is now the coach's *only* cited statistic, so for any habit with a non-daily schedule or a pause, the coach quotes a percentage that differs from the one Progress shows for that same habit. The divergence predates this change and is not introduced by it, but it was previously one of two numbers the coach might reach for and is now the only one.
+
+**This strengthens the case for the whitelist extension being early in the Phase 5 sequence rather than late** (see `docs/phase-5-precondition-review.md` §D4, where the accepted order is guard, then `buildCoachFacts` and validator, then whitelist extension, then DB read widening, then prompt rewrite). The divergence is not newly wrong, but it is newly load-bearing.
+
+### Deployment: not yet in effect
+
+Every string changed here, and the `summary` object, sits **outside** the `BEGIN/END GENERATED DOMAIN` markers in both files. They are hand-maintained code.
+
+- **The generated block is unaffected, and `npm run build:edge-functions` was not required.** The whitelist and the `lib/domain/` sources are unchanged, so regenerating produces a byte-identical block; the freshness check in `scripts/build-edge-functions.test.ts` passes for that reason.
+- **The fix does not take effect in production until both functions are re-pasted into the Supabase Dashboard.** Both, not one: the nudge prompt is duplicated across them, and `send-coaching-push` is the path that reaches users without them opening the app. **Until that re-paste happens, the deviation continues shipping exactly as before.**
+
+### Verification
+
+- `npm test` — 10 suites, 218 tests, all passing (no test changes; no domain code was touched).
+- `npx tsc --noEmit` — clean.
+- `npm run lint` — clean.
+- `npx expo export --platform web` — bundles cleanly, 15 static routes present.
+
+### Scope
+
+Phase 5 not started and not recommended by this change. No domain logic, no whitelist, no database reads, and no client code touched. C2 is recorded as strengthened, not fixed. The precondition review's A2 (Habit Health and the single-hysteresis rule) and A3 (the two non-derivable coach inputs) remain open product decisions.

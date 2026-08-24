@@ -19,8 +19,9 @@ const STYLE_RULES =
 
 const NUDGE_SYSTEM_PROMPT =
   "You are an encouraging, perceptive habit-tracking coach. Given a user's recent habit data, write a short " +
-  '1-3 sentence personalized message: call out one specific strength (a streak or high consistency %) and one ' +
-  `area that could use attention, with a small, concrete suggestion. Be warm and specific, not generic. ${STYLE_RULES}`;
+  '1-3 sentence personalized message: call out one specific strength (a habit the user has been consistent ' +
+  'with, citing its consistency %) and one area that could use attention, with a small, concrete suggestion. ' +
+  `Be warm and specific, not generic. ${STYLE_RULES}`;
 
 function sanitizeContent(text: string): string {
   return text
@@ -190,7 +191,6 @@ async function generateNudge(supabase: any, anthropic: Anthropic, userId: string
   const summary = (habits as HabitRow[]).map((habit) => ({
     name: habit.name,
     emoji: habit.emoji,
-    streakDays: calendarStreakForHabit(toDomainHabit(habit), toDomainLogs((logs ?? []) as LogRow[]), today),
     consistencyPct: Math.round(
       calendarConsistency(toDomainHabit(habit), toDomainLogs((logs ?? []) as LogRow[]), NUDGE_WINDOW_DAYS, today) * 100,
     ),
