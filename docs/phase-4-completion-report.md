@@ -805,12 +805,13 @@ The `calendarConsistency` versus schedule-aware `consistency()` divergence is al
 
 **This strengthens the case for the whitelist extension being early in the Phase 5 sequence rather than late** (see `docs/phase-5-precondition-review.md` §D4, where the accepted order is guard, then `buildCoachFacts` and validator, then whitelist extension, then DB read widening, then prompt rewrite). The divergence is not newly wrong, but it is newly load-bearing.
 
-### Deployment: not yet in effect
+### Deployment: in effect as of 2026-09-08
 
 Every string changed here, and the `summary` object, sits **outside** the `BEGIN/END GENERATED DOMAIN` markers in both files. They are hand-maintained code.
 
 - **The generated block is unaffected, and `npm run build:edge-functions` was not required.** The whitelist and the `lib/domain/` sources are unchanged, so regenerating produces a byte-identical block; the freshness check in `scripts/build-edge-functions.test.ts` passes for that reason.
-- **The fix does not take effect in production until both functions are re-pasted into the Supabase Dashboard.** Both, not one: the nudge prompt is duplicated across them, and `send-coaching-push` is the path that reaches users without them opening the app. **Until that re-paste happens, the deviation continues shipping exactly as before.**
+- **The fix took effect only once both functions were re-pasted into the Supabase Dashboard.** Both, not one: the nudge prompt is duplicated across them, and `send-coaching-push` is the path that reaches users without them opening the app. **Both were re-pasted and deployed on 2026-09-08, and the deviation is no longer shipping.** It had been live on every nudge from the feature's introduction until that date.
+- **Preparing that paste surfaced a separate problem**, recorded as B6 of `docs/phase-5-precondition-review.md`: the deployed versions had drifted several weeks behind the repository, predating both schedule-aware corrections, and nothing in the project could have detected that. The consequence here was benign — the `calendar*` change was a rename with byte-identical bodies, verified — but that was a property of which commits happened to be pending, not of the process.
 
 ### Verification
 
