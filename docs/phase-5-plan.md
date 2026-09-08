@@ -105,6 +105,8 @@ The verification report exercised the configuration against `ai-insights` only. 
 
 Step 1 is not complete until the guard passes on both files against the current whitelist. **Dropping the block-only fallback is not settled until then**, and this plan does not treat it as settled.
 
+**Finding D closed by Step 1 implementation.** `send-coaching-push` passed the identical stub set and configuration that clears `ai-insights`, with no widening required despite the extra surface named above — all of it resolves against `ESNext`/`DOM` lib alone. Full-file checking worked cleanly for both; the block-only fallback was not needed and coverage was not reduced. The open half of finding D — the configuration having only ever been exercised against one function — is closed.
+
 ## What keeps the stubs honest **[New]**
 
 Directly: **nothing.** The stubs are a hand-written assertion about an external API's shape. If `@anthropic-ai/sdk` or `@supabase/supabase-js` changes, the stub does not know, and the guard will keep passing against a shape that no longer exists. The guard verifies that the Edge Function is internally consistent *with the stub*, not that the stub is true.
@@ -765,7 +767,7 @@ Named here so none is discovered by a tester.
 | A spelled-out behavioural duration ("you usually return in three days") is a Recovery Time claim a digit-keyed validator never inspects | Accepted. Prompt rule reduces likelihood only. |
 | Non-numeric characterisations generally are outside numeric-membership validation | Accepted, per §D2 caveat 4. No semantic validator is built. |
 | `CoachFacts` carries `no_positive_recent_comparison`, so "verbalise only on positive" rests on prompt plus validator rather than payload shape | **Explicitly accepted and ruled** (§14 item #7). An additional instance of the already-accepted non-numeric semantic risk, not a new exposure. Not to be recovered by a new mechanism. |
-| Step 1 stubs assert an external API shape nothing verifies | Accepted. Bounded by minimality; surfaces at Deno runtime. |
+| Step 1 stubs assert an external API shape nothing verifies | Accepted. Bounded by minimality; surfaces at Deno runtime. **Containment rule, implemented and recorded in the guard's own comments as of Step 1:** narrowness (each stub is typed only for what its call site actually uses, never the SDK's full surface) and attribution (a widening must be justified by a real call site that needs it, never by an unrelated compiler complaint it happens to silence). No mechanism enforces this beyond code review; it is a rule for whoever next touches the stub, not a check that runs. |
 | Step 4 fact inspection verifies transport, not domain arithmetic | By design. Domain correctness owned by Step 2 tests. |
 | A tester cannot distinguish grounded coaching, deterministic fallback, and validator suppression from the Coach card, so "felt generic" is not attributable to a branch unaided | Mitigated for sampled users by §6.7's branch attribution, which separates all four faults using facts already returned. Not resolved for unsampled tester feedback. |
 | Branch attribution reads facts at inspection time, not at generation time; a nudge caches ~20 h, so the facts may have moved since the impression complained about | Accepted. Closing it needs the branch persisted at generation time — more than a field already computed. |
