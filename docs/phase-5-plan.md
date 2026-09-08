@@ -472,6 +472,24 @@ Prohibited: "This habit is improving." / "This is becoming established." / "You'
 
 All Phase 5 coach output remains bound by `CLAUDE.md`'s user-facing copy rules, including no em dashes and the variation contract's prohibition on loss framing.
 
+### Emphasis order among grounded facts **[Ruled]**
+
+§6.5 governs grounded-versus-fallback. This governs selection *within* the grounded branch, so that **the model does not decide which behavioural fact deserves emphasis.**
+
+**No new mechanism is introduced.** There is no ranking engine, no new `CoachFacts` field and no additional work item. Every condition below resolves to a value the domain layer has already determined and `CoachFacts` already carries, and the prompt keys on that value rather than judging it.
+
+1. **Recovery and return lead when the return is the story.** The condition is **confirmed Momentum State being `recovering` or `rebuilding`**, and it is deterministic because those two states already require it: by their own `candidateStateAt` definitions, both demand that the window's most recent opportunity was itself a completion closing a lapse. `CLAUDE.md` states this directly — they are positive-family states where "both require the window's most recent opportunity to be a completion." **The model is therefore never asked whether recovery is the relevant story; the domain layer has already answered.**
+
+   This is **not an exception to rule 1.** When Momentum State is `recovering` or `rebuilding`, recovery leading *is* Momentum leading. The two rules do not compete.
+
+2. **Otherwise confirmed Momentum State is the primary ongoing behavioural narrative**, per rule 1.
+
+3. **Positive Habit Health may be communicated when eligible, and never outranks Momentum.** It is supporting evidence added to the narrative, not a candidate to lead it. Rules 2 to 4 continue to bind its wording.
+
+4. **Stated lapse reasons are contextual evidence, not a ranked item. [New]** They do not sit beneath Habit Health in an ordering, because they are not competing for the lead — they qualify whichever grounded insight is being given. The rule is preference, not position: **when a stated reason exists for the lapse under discussion, it is preferred to any inferred explanation, and the coach must not offer a cause of its own when none is stated.** This implements the specification's "Prioritise stated reasons over inferred behaviour" as a selection rule rather than only as a field justification (§4.2).
+
+5. **Deterministic habit-support guidance is last**, reachable only through §6.5's `else` when no grounded insight is available.
+
 ### Scope boundary against Phase 6 **[Ruled]**
 
 Phase 5 mechanically grounds **all three** existing coaching output kinds — nudge, weekly, monthly — in `CoachFacts`. Phase 6 redesigns reflection content and experience. **No existing coaching path may remain on the old factual mechanism merely because its content redesign belongs to Phase 6.**
@@ -746,7 +764,7 @@ Named here so none is discovered by a tester.
 |---|---|
 | A spelled-out behavioural duration ("you usually return in three days") is a Recovery Time claim a digit-keyed validator never inspects | Accepted. Prompt rule reduces likelihood only. |
 | Non-numeric characterisations generally are outside numeric-membership validation | Accepted, per §D2 caveat 4. No semantic validator is built. |
-| `CoachFacts` carries `no_positive_recent_comparison`, so "verbalise only on positive" rests on prompt plus validator rather than payload shape | Accepted. Weaker than structural omission. |
+| `CoachFacts` carries `no_positive_recent_comparison`, so "verbalise only on positive" rests on prompt plus validator rather than payload shape | **Explicitly accepted and ruled** (§14 item #7). An additional instance of the already-accepted non-numeric semantic risk, not a new exposure. Not to be recovered by a new mechanism. |
 | Step 1 stubs assert an external API shape nothing verifies | Accepted. Bounded by minimality; surfaces at Deno runtime. |
 | Step 4 fact inspection verifies transport, not domain arithmetic | By design. Domain correctness owned by Step 2 tests. |
 | A tester cannot distinguish grounded coaching, deterministic fallback, and validator suppression from the Coach card, so "felt generic" is not attributable to a branch unaided | Mitigated for sampled users by §6.7's branch attribution, which separates all four faults using facts already returned. Not resolved for unsampled tester feedback. |
@@ -854,7 +872,7 @@ The **⚠** column marks positions that change, extend or narrow something alrea
 | 4 | 4.1 | Enum member names `insufficient_evidence` / `no_positive_recent_comparison` / `positive_recent_comparison` *(proposed here; you substituted the middle member)* | |
 | 5 | 4.2 | Excluding the lifetime Scheduled Opportunity count, one field beyond what the report proposed | **⚠** |
 | 6 | 4.2 | Spec compatibility check: the exclusion does not breach A3's ten inputs, on A3's own input-versus-payload distinction | **⚠** |
-| 7 | 4.2 | Carrying all three Habit Health states means "verbalise only on positive" rests on prompt plus validator, weaker than the structural omission it replaced | **⚠** |
+| 7 | 4.2 | Carrying all three Habit Health states means "verbalise only on positive" rests on prompt plus validator, weaker than the structural omission it replaced — **raised here, explicitly accepted; see below** | **⚠ accepted** |
 | 8 | 6.5 | Fallback as deterministic selection with no model call, rather than a second generation path | **⚠** |
 | 9 | 6.5 | Fallback copy constraint: the topics are permitted but "protecting a streak" phrasing is prohibited by the variation contract | |
 | 10 | 6.5 | A validator rejection is not a route into the fallback | |
@@ -866,11 +884,27 @@ The **⚠** column marks positions that change, extend or narrow something alrea
 - **2** — settles an ambiguity in approved architecture decision 1. Does not amend it; closes it in the only way leaving both decisions with content.
 - **3** — supports adding a third constant to a two-constant approved architecture. The constant count moves from two to three.
 - **5, 6** — narrows `CoachFacts` past the report's proposal and touches one of A3's ten named inputs. Ratified by your ruling 6.
-- **7** — a weakening that follows from your ruling 2. The report made this enforcement structural; carrying all three states makes it advisory. The consequence is yours by ruling, but the fact that it is weaker originated here.
+- **7** — **explicitly accepted and ruled.** See the trade-off record immediately below.
 - **8** — adds scope no precondition contemplated. Ratified by your ruling 5.
 - **12** — changes the basis on which you approved the branch, from removal at the Step 5 paste to removal under the named condition in §6.7. The most consequential of the twelve.
 
 Positions 1, 4, 9, 10 and 11 change nothing already approved.
+
+## Item #7, accepted — the recorded trade-off **[Ruled]**
+
+Keeping all three Habit Health states in `CoachFacts` means the rule "Habit Health may be verbalised only when the verdict is `positive_recent_comparison`" (§6.3 rule 2) is **no longer enforced by payload absence.** It is instead enforced through:
+
+- the deterministic three-state domain verdict;
+- the closed `CoachFacts` payload;
+- explicit prompt constraints;
+- targeted tests;
+- the existing output-validation boundary, to the extent that validation can mechanically cover the generated claim.
+
+**This is weaker than omitting the field for non-positive states, and that is accepted.** It is a deliberate consequence of the ruling to preserve all three deterministic states in `CoachFacts` — architecture decision 3's distinction between *insufficient evidence* and *evidence without the positive signal* is worth more than the structural guarantee it costs — **not a newly discovered architecture defect.**
+
+The residual risk is specifically **non-numeric semantic misuse of a non-positive Habit Health verdict**: a model that receives `no_positive_recent_comparison` verbalising it, in a form carrying no numeral for the validator to check. **That class of risk was already accepted for MVP when general semantic and entailment validation was deferred** (§D2 caveat 4, §6.4). It is not a new exposure; it is an additional instance of an exposure already on the register.
+
+**Explicitly not to be recovered.** No projection layer, no second facts payload, no semantic validator, and no other mechanism may be introduced to restore the previous structural guarantee. If a future phase takes up general characterisation validation, this instance is covered by that work rather than by a bespoke fix here.
 
 ---
 
