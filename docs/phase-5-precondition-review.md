@@ -26,6 +26,8 @@ Habit Health has no existence in the codebase — zero references outside the lo
 
 A signal telling the user their habit is too ambitious, which then does not hold the next day, is worse than no signal. Phase 5 must rule, before design: either Habit Health is a single-pass stateless computation and accepts that volatility, or it receives stability treatment, which introduces a second hysteresis site and contradicts a rule the project currently records as settled. Per `CLAUDE.md`'s own instruction, that is a contradiction to report rather than resolve unilaterally.
 
+**Required opening for A2, per the A3 decision below.** A2 must begin by restating, explicitly and as a stated input to its own reasoning rather than as background, that **A3 has already narrowed its evidence set**: habit-edit history and reminder-interaction history do not exist and are deferred, so Habit Health in the initial implementation cannot depend on either. This weakens the available evidence for two of the three illustrative signals without blocking the required concept. See "A3 consequence" below. The constraint is settled and is not to be re-litigated or rediscovered inside A2; what remains open to A2 is which signals ship, on what evidence, and whether the concept takes stability treatment.
+
 ### A3. Two of the specification's ten named coach inputs are not derivable from stored data
 
 | Specification input | Status |
@@ -36,7 +38,40 @@ A signal telling the user their habit is too ambitious, which then does not hold
 | **Habit difficulty and edits** | **Not derivable.** `Habit.updatedAt` is a scalar last-write-wins timestamp (`lib/habit-types.ts` line 20). No edit history exists, so "the user has lowered this target twice" is unanswerable. |
 | **Reminder usage** | **Not derivable.** `Habit.reminderTimes` is configuration only. Nothing records delivery, dismissal, or action. |
 
-Decision needed: capture them (additive schema, and the locked specification's global constraints require documenting any migration before running it), or scope them out of Phase 5 explicitly.
+### A3 specification status, established by audit before deciding
+
+**The ten inputs are requirements, not an illustrative set.** The locked specification marks illustrative lists explicitly and does so consistently — eight times, at lines 109 (`Examples:`), 157 (`Example states:`), 227 (`Example messages:`), 255 (`...such as:`), 272 (`For example:`), 346 (`Examples of signals the coach may communicate:`), 405 and 442 (`Examples:`). The Phase 5 input list carries no such marker; its lead-in is the bare imperative **"Use as inputs:"**.
+
+There is also in-document precedent for how an unmarked list is read. Phase 2's Scheduled Opportunity list contains its own correction: *"Streak was omitted from this list in error when it was first written. The principle above is unqualified..."* That is the specification treating an unmarked list as normative and repairing an omission, rather than reading the list as loose.
+
+`docs/implementation-roadmap.md`'s Phase 5 parenthetical names only five inputs, omitting these two among others. That is **not** a narrowing: the same document states that "The locked product specification (`docs/habit-tracker-evolution-plan.md`) remains the authority on what each phase builds. This roadmap governs sequencing only."
+
+**A distinction that materially narrows what is being decided.** The specification separates *inputs to the coaching system* from *facts passed to the model*. Its Deterministic Architecture section enumerates the latter: "consistency, momentum, Momentum State, recovery events, recovery rate, lapse patterns, habit health signals, behavioural trend direction". Habit edits and reminder usage are **absent** from that enumeration; habit health signals are present. Neither excluded input was ever required to appear in the payload, so excluding them from `CoachFacts` is specification-compatible on its own terms and is not the substance of this decision.
+
+### A3 decision, approved 2026-09-08: deferred, not removed
+
+**Habit edit history and reminder usage remain requirements of the locked product specification. They are deferred from the initial Phase 5 implementation. This is a sequencing decision, not removal of either capability from the specification.** The locked specification is not amended, and must not be.
+
+**Reason for deferral: the current data model cannot represent either concept truthfully.**
+
+- **`Habit.updatedAt` must not be used or described as edit history.** It is a scalar last-write-wins timestamp (`lib/habit-types.ts` line 20) that records only *that* something changed, with no indication of *what*. A renamed emoji is indistinguishable from a lowered target.
+- **`Habit.reminderTimes` must not be treated as reminder usage.** It is configuration. Nothing anywhere records delivery, dismissal, or action.
+
+**These are not weak proxies for the concepts. They are raw fields that do not represent them at all.** Neither may be inferred or approximated from existing fields. The failure mode is specific: approximating edit history from `updatedAt` yields an invented **characterisation** rather than an invented **statistic**, which numeric-membership validation does not catch (§D2, caveat 4).
+
+**Neither raw habit edit history nor raw reminder usage may appear in `CoachFacts` in the initial implementation.** This is compatible with the deterministic architecture rather than a departure from it: the model should receive deterministic behavioural facts and signals, not be handed fields that do not carry the concept and asked to infer it. Because the enumerable set is the leaf fields of `CoachFacts` (§D2), the exclusion holds structurally rather than by instruction.
+
+**Future support requires explicit event capture and schema design. That is not designed here, and must not be designed as part of recording this decision.**
+
+### A3 consequence: this narrows A2's initial evidence set
+
+**Recorded explicitly because it must not be rediscovered later as though it were new.** Habit Health in the initial implementation cannot depend on habit-edit history or reminder-interaction history, because neither exists.
+
+The exclusion **weakens the available evidence for two of the three illustrative Habit Health signals**: "this habit may be too ambitious", whose most direct evidence is repeated target lowering, and the reminder-related reading of "this habit may be scheduled at the wrong time or on the wrong days". It **does not block the required Habit Health concept**, which the specification requires as deterministic domain signals while marking its three named signals as examples (line 346, one of the eight illustrative markers above).
+
+**What is deliberately not decided here:** no weaker evidence is substituted for either signal, and no ruling is made on which Habit Health signals should ship. Both belong to A2.
+
+**A2 must open by restating this narrowing explicitly, as a stated input to its own reasoning rather than as background.** A3 was decidable on its own terms — its reasoning about `updatedAt` holds whatever A2 concludes — but it is not independent of A2 in consequence: it fixes part of the evidence available to Habit Health before Habit Health is defined. A2 is therefore to be taken up in explicit knowledge of that constraint, not to encounter it midway.
 
 ---
 
@@ -127,7 +162,7 @@ Item 1 matters most: Phase 5 must rewrite prompts in **both** functions, and `CL
 
 ## Summary
 
-Nothing recorded here blocks Phase 5 permanently. Three decisions genuinely need making before a plan can be written (A1-A3). Six constraints should shape the plan rather than be discovered mid-build (B1-B6). The C-items were defects rather than design questions and have been handled separately: C1 fixed and deployed 2026-09-08, C3 fixed in `a442a03`, C2 still open and now more exposed than when it was recorded.
+Nothing recorded here blocks Phase 5 permanently. Of the three decisions needed before a plan can be written, **two are now made**: A1 (mechanism — see §D1) and A3 (habit edits and reminder usage deferred, not removed). **A2 alone remains open**, and must open by restating A3's narrowing of its evidence set. Six constraints should shape the plan rather than be discovered mid-build (B1-B6). The C-items were defects rather than design questions and have been handled separately: C1 fixed and deployed 2026-09-08, C3 fixed in `a442a03`, C2 still open and now more exposed than when it was recorded.
 
 Phase 5 has not begun. This document does not authorize starting it.
 
