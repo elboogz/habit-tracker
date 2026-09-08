@@ -198,6 +198,65 @@ Final on-device testing across the complete flow.
 
 ---
 
+# Future scope (post-MVP) — not part of the current roadmap
+
+Items below are recorded opportunities. They are **not** phases, hold no sequencing position, and are **not** dependencies of any numbered phase. Nothing here is authorised for implementation, and nothing here alters the MVP roadmap above.
+
+## Health Data Integrations / Verified Habits
+
+**Product principle:** *"Health data should provide evidence for behaviour, not become another category of data for the app to display."*
+
+### 1. Verified or automatic habit completion
+
+Health data could provide objective evidence that certain habits were completed, reducing manual logging. Strongest initial candidates: **step goals**, **workouts / exercise activity**, and **potentially sleep-related habits** where the underlying data is sufficiently reliable.
+
+**This is not purely an input-source question.** An automatically completed habit creates a `HabitLog` the user did not manually create, which carries domain implications that must be explicitly scoped before any such capability is built. Already known to interact with:
+
+- Recovery Events
+- Momentum
+- retroactive-entry window rules
+- the distinction between **when an activity occurred** and **when its evidence was received**
+
+A health source may backfill data after the fact and therefore write evidence to past dates. **This creates a related class of temporal-integrity problem to the pre-creation-log issue already remediated** (see `docs/phase-4-completion-report.md`), **though it is not necessarily governed by the same rules or the same solution.** Legitimate health data received late is not inherently invalid historical data and must not be assumed to be.
+
+None of this is designed or resolved here. It is recorded as a domain concern requiring explicit scoping before automatic or verified completion is implemented, and the interaction list above is what is already known to apply rather than a complete one.
+
+### 2. Permissioned behavioural context for coaching
+
+With explicit user permission, relevant activity or sleep information could eventually provide additional behavioural context for coaching.
+
+**Architectural constraint, inherited from the A2 and A3 decisions** (`docs/phase-5-precondition-review.md`): any health-derived behavioural signal **must be computed deterministically in the domain layer, transported to `CoachFacts` as a closed fact, and never passed to the model as raw health data for the model to interpret.**
+
+This is recorded here, alongside the idea, rather than left to be rediscovered when an integration is eventually built: health data is precisely the kind of rich, suggestive input that invites bypassing the deterministic-facts architecture.
+
+The AI may **verbalise** an already-decided health-derived behavioural fact where appropriate. It must **not** independently interpret raw health measurements into behavioural conclusions.
+
+### 3. Do not become a health dashboard
+
+Do not add generic health charts, and do not surface data simply because it is available. Heart rate, calories, sleep, activity and similar metrics may enter the product only where there is a clear connection to the user's habit or behaviour-change experience.
+
+The purpose of health integration is to strengthen the existing recovery-first behaviour-change product, not to turn it into a general health or fitness tracker.
+
+### 4. Platform direction
+
+Apple Health / HealthKit is the obvious initial integration opportunity, but the capability is described generically here so that equivalent Android health-data integration can be supported later. Neither platform has been researched, and researching them is not authorised by this entry.
+
+### 5. Initial scope, when eventually explored
+
+Start with the narrowest useful integrations — **steps and workouts** — rather than attempting broad Apple Health support. **Sleep** may be considered subsequently, where the data and its behavioural semantics are sufficiently reliable.
+
+Do **not** scope heart rate, HRV, calories, weight, nutrition or other available health metrics merely because a platform exposes them. Each requires an actual behavioural use case before entering the product.
+
+### What this entry does not authorise
+
+It records an opportunity and the constraints already known to apply. It does not authorise: HealthKit or Android API research; schema changes; permission-flow design; health-data storage design; automatic-completion architecture; changes to `HabitLog`; changes to Recovery or Momentum; changes to retroactive-entry rules; or new `CoachFacts` fields.
+
+### Authority
+
+This is a roadmap entry, not a product-specification amendment. `docs/habit-tracker-evolution-plan.md` remains the authority on what the product builds and is unaltered; this roadmap continues to govern sequencing only. Should health integration ever be approved as product scope, that approval belongs in the locked specification, not here.
+
+---
+
 # Notes
 
 The locked product specification (`docs/habit-tracker-evolution-plan.md`) remains the authority on what each phase builds. This roadmap governs sequencing only.
