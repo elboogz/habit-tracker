@@ -6,7 +6,7 @@
 import type { Habit, HabitLog, HabitSchedulePeriod } from '../habit-types';
 import { MOMENTUM_CONFIG } from './config';
 import { isDoneOnDay } from './habit-stats';
-import { closedLapses } from './recovery';
+import { closedLapses, type ClosedLapse } from './recovery';
 import { scheduledOpportunitiesUpTo } from './schedule';
 
 export type MomentumStateKey =
@@ -113,18 +113,19 @@ function isCurrentlyQuiet(records: OpportunityRecord[], today: string): boolean 
   return missedFraction >= cfg.minMissedFraction;
 }
 
-function isRecentShortRecovery(
-  habit: Habit,
-  periods: HabitSchedulePeriod[],
-  logs: HabitLog[],
-  asOfDate: string,
-  records: OpportunityRecord[],
-  today: string,
-): boolean {
+/**
+ * Takes `lapses` (every closed Lapse as of the day being classified) as a parameter rather than
+ * deriving it internally, so a single `closedLapses` result -- however it was obtained -- can be
+ * shared with `isRebuildingFromLapses` below and, since Step 2a (docs/phase-5-plan.md section 5),
+ * with `confirmedStateAt`'s precomputed walk. `candidateStateAt` still passes exactly
+ * `closedLapses(habit, periods, logs, asOfDate)`, so this is a pure code-motion split of the
+ * previous `isRecentShortRecovery`, not a behavioural change: the two are the same function with
+ * the shared subexpression pulled out to its one caller.
+ */
+function isRecentShortRecoveryFromLapses(records: OpportunityRecord[], lapses: ClosedLapse[], today: string): boolean {
   const cfg = MOMENTUM_CONFIG.recovering;
   const window = lastN(records, cfg.window);
   const windowDates = new Set(window.map((record) => record.date));
-  const lapses = closedLapses(habit, periods, logs, asOfDate);
   for (const lapse of lapses) {
     if (!windowDates.has(lapse.recoveredDate)) continue;
     if (lapse.missedOpportunityCount > cfg.maxPrecedingLapseLength) continue;
@@ -135,29 +136,29 @@ function isRecentShortRecovery(
   return false;
 }
 
-function isRebuilding(
-  habit: Habit,
-  periods: HabitSchedulePeriod[],
-  logs: HabitLog[],
-  asOfDate: string,
-  records: OpportunityRecord[],
-  today: string,
-): boolean {
+/** See isRecentShortRecoveryFromLapses's doc comment -- same split, same reasoning, for isRebuilding. */
+function isRebuildingFromLapses(records: OpportunityRecord[], lapses: ClosedLapse[], today: string): boolean {
   const cfg = MOMENTUM_CONFIG.rebuilding;
   const window = lastN(records, cfg.window);
   if (window.length < cfg.window) return false;
   const resolved = resolvedView(window, today);
   if (resolved.length === 0 || !resolved[resolved.length - 1].completed) return false; // must currently be completing again, not still missing
   const windowDates = new Set(window.map((record) => record.date));
-  const lapses = closedLapses(habit, periods, logs, asOfDate);
   return lapses.some((lapse) => lapse.missedOpportunityCount >= cfg.minPrecedingLapseLength && windowDates.has(lapse.recoveredDate));
 }
 
 /**
- * The raw, unhysteresed classification as of `asOfDate` -- recomputed fresh from schedule + logs
- * only, no memory of any prior evaluation. Evaluation order (first match wins): insufficient_data
- * -> recovering -> quiet -> thriving/steady -> rebuilding -> building (least committal default,
- * reached whenever nothing more specific claims the day).
+ * The raw, unhysteresed classification, given every Scheduled Opportunity record up to and
+ * including the day being classified (`records`) and exactly what `closedLapses(habit, periods,
+ * logs, <that same day>)` would return (`lapses`). Evaluation order (first match wins):
+ * insufficient_data -> recovering -> quiet -> thriving/steady -> rebuilding -> building (least
+ * committal default, reached whenever nothing more specific claims the day).
+ *
+ * Extracted from `candidateStateAt` in Step 2a (docs/phase-5-plan.md section 5) so there is
+ * exactly one implementation of the evaluation order and its rules -- shared, unchanged, between
+ * `candidateStateAt`'s own per-call computation below and `confirmedStateAt`'s precomputed,
+ * sliced walk. Callers differ only in how cheaply they obtain `records`/`lapses`; this function
+ * has no opinion on that and performs no lookup of its own.
  *
  * `rebuilding` is checked ahead of `building`, not after it as a fallback -- see
  * docs/phase-4-completion-report.md's "Momentum evaluation precedence" post-completion fix. With
@@ -172,16 +173,45 @@ function isRebuilding(
  * (`docs/phase-2-implementation-plan.md` section 8's fixture table: confirmed sequence
  * insufficient_data -> quiet/rebuilding -> building -> steady -> thriving).
  *
- * `today` is the real, live current day -- distinct from `asOfDate`, which is the Scheduled
- * Opportunity being classified and may be an earlier date than `today` when this is called as one
- * step of `confirmedStateAt`'s walk. `records.length`/every window-size check is a scheduling fact
- * and reaches full size the instant `asOfDate` is scheduled, regardless of completion; the
+ * `today` is the real, live current day -- distinct from the day `records`/`lapses` are bounded
+ * at, which may be an earlier date than `today` when this is called as one step of
+ * `confirmedStateAt`'s walk. `records.length`/every window-size check is a scheduling fact and
+ * reaches full size the instant that day is scheduled, regardless of completion; the
  * evidence-inspecting helpers above (`completionRate`, `isCurrentlyQuiet`, `meetsRateWindow`,
- * `meetsBuilding`, `isRebuilding`, `isRecentShortRecovery`) each set aside `asOfDate`'s own record
- * when it equals `today` and is unlogged, per "today is never classified as missed" -- never for
- * any earlier `asOfDate`, which is always a fully-resolved past fact regardless of `today`. No
- * default: every caller must state which day is live. See docs/phase-4-completion-report.md,
- * "Current-day design, settled: scheduling fact vs. evidence judgment" and the section below it.
+ * `meetsBuilding`, `isRebuildingFromLapses`, `isRecentShortRecoveryFromLapses`) each set aside the
+ * final record when its date equals `today` and it's unlogged, per "today is never classified as
+ * missed" -- never for any earlier record, which is always a fully-resolved past fact regardless
+ * of `today`. No default: every caller must state which day is live. See
+ * docs/phase-4-completion-report.md, "Current-day design, settled: scheduling fact vs. evidence
+ * judgment" and the section below it.
+ */
+function classifyFromRecords(records: OpportunityRecord[], lapses: ClosedLapse[], today: string): MomentumStateKey {
+  if (records.length < MOMENTUM_CONFIG.insufficientData.minScheduledOpportunities) return 'insufficient_data';
+
+  if (isRecentShortRecoveryFromLapses(records, lapses, today)) return 'recovering';
+
+  if (isCurrentlyQuiet(records, today)) return 'quiet';
+
+  if (meetsRateWindow(records, MOMENTUM_CONFIG.thriving, today, { requireNoLapseAtAll: true })) return 'thriving';
+  if (meetsRateWindow(records, MOMENTUM_CONFIG.steady, today, { requireNoOpenLapse: true })) return 'steady';
+
+  if (isRebuildingFromLapses(records, lapses, today)) return 'rebuilding';
+
+  if (meetsBuilding(records, today)) return 'building';
+
+  return 'building';
+}
+
+/**
+ * The raw, unhysteresed classification as of `asOfDate` -- recomputed fresh from schedule + logs
+ * only, no memory of any prior evaluation. See `classifyFromRecords` above for the evaluation
+ * order and rules; this function's only job is to derive `records` and `lapses` for `asOfDate`
+ * the direct way (a fresh `recordsUpTo`/`closedLapses` call each time), which is the correct,
+ * simplest implementation for a function that may be called with any `asOfDate` in isolation.
+ * `confirmedStateAt` below does not call this function -- its own walk needs the same two values
+ * far more cheaply than deriving them fresh at every step would allow (Step 2a,
+ * docs/phase-5-plan.md section 5), so it obtains them its own way and calls
+ * `classifyFromRecords` directly.
  */
 export function candidateStateAt(
   habit: Habit,
@@ -191,21 +221,46 @@ export function candidateStateAt(
   today: string,
 ): MomentumStateKey {
   const records = recordsUpTo(habit, periods, logs, asOfDate);
+  const lapses = closedLapses(habit, periods, logs, asOfDate);
+  return classifyFromRecords(records, lapses, today);
+}
 
-  if (records.length < MOMENTUM_CONFIG.insufficientData.minScheduledOpportunities) return 'insufficient_data';
+/**
+ * A per-`confirmedStateAt`-call completion lookup, replacing repeated linear scans of the full
+ * `logs` array (Step 2a, docs/phase-5-plan.md section 5). Reproduces `isDoneOnDay`
+ * (lib/domain/habit-stats.ts) exactly -- same fields, same rule (a reduced completion always
+ * counts; otherwise total count against target for count habits, otherwise any log at all for
+ * simple habits) -- for every date in `dates`, computed once from `habit.id`'s own logs grouped
+ * by date rather than filtering `logs` (which may hold every habit's history, not just this
+ * one's) once per date. `habit-stats.ts` itself is not touched: this is a local, momentum.ts-only
+ * mirror used solely to build `confirmedStateAt`'s once-per-call records, never a second
+ * definition of what "done" means -- `isDoneOnDay` remains the single source of truth for
+ * every other caller, including `candidateStateAt` above via the unmodified `recordsUpTo`.
+ * Every date actually needed is passed in and given an explicit entry, so a lookup can never
+ * silently fall through to a default for a date this function was not asked about.
+ *
+ * Must remain behaviourally equivalent to `isDoneOnDay`; review this index whenever completion
+ * semantics change there. Nothing detects drift between the two automatically -- see the residual
+ * risk register in docs/phase-5-plan.md section 10.
+ */
+function buildCompletionIndex(habit: Habit, logs: HabitLog[], dates: string[]): Map<string, boolean> {
+  const logsByDate = new Map<string, HabitLog[]>();
+  for (const log of logs) {
+    if (log.habitId !== habit.id) continue;
+    const bucket = logsByDate.get(log.date);
+    if (bucket) bucket.push(log);
+    else logsByDate.set(log.date, [log]);
+  }
 
-  if (isRecentShortRecovery(habit, periods, logs, asOfDate, records, today)) return 'recovering';
-
-  if (isCurrentlyQuiet(records, today)) return 'quiet';
-
-  if (meetsRateWindow(records, MOMENTUM_CONFIG.thriving, today, { requireNoLapseAtAll: true })) return 'thriving';
-  if (meetsRateWindow(records, MOMENTUM_CONFIG.steady, today, { requireNoOpenLapse: true })) return 'steady';
-
-  if (isRebuilding(habit, periods, logs, asOfDate, records, today)) return 'rebuilding';
-
-  if (meetsBuilding(records, today)) return 'building';
-
-  return 'building';
+  const completionByDate = new Map<string, boolean>();
+  for (const date of dates) {
+    const dayLogs = logsByDate.get(date) ?? [];
+    const reduced = dayLogs.some((log) => log.reduced);
+    const total = dayLogs.reduce((sum, log) => sum + log.count, 0);
+    const done = reduced || (habit.type === 'count' ? total >= (habit.targetCount ?? 1) : total > 0);
+    completionByDate.set(date, done);
+  }
+  return completionByDate;
 }
 
 /**
@@ -216,15 +271,29 @@ export function candidateStateAt(
  *
  * This is a single deterministic forward scan over the habit's entire Scheduled Opportunity
  * history -- entirely derived (schedule periods + logs only), with no persisted momentum state
- * of any kind. The trade-off, surfaced rather than silently adopted: this is O(n) evaluations of
- * candidateStateAt, each of which is itself not O(1) (it re-derives records/lapses from scratch),
- * so confirmedStateAt's real cost grows faster than linearly with a habit's lifetime opportunity
- * count. At this app's actual scale (a personal habit tracker; a multi-year daily habit is on the
- * order of ~1,000 opportunities) this is not a practical concern today. If usage ever made it one,
- * the natural optimization would be to cache the last confirmed state and the date it was last
- * confirmed, and only rescan forward from there -- which would be a form of stored state,
- * reintroducing exactly the trade-off against the derived-on-read architecture this module
- * currently avoids. Not adopted now; noted here as a known future option only.
+ * of any kind, and no change to that architecture from the optimisation below (docs/phase-5-plan.md
+ * section 5, "Step 2a"): every value is still recomputed from `habit`/`periods`/`logs` on every
+ * call, nothing is cached across calls, and no second hysteresis mechanism is introduced --
+ * `computeConfirmedMomentumState` below, unchanged, remains the only place a transition is
+ * decided.
+ *
+ * **What changed, and why it's still exactly equivalent.** The original implementation called
+ * `candidateStateAt` once per Scheduled Opportunity, and `candidateStateAt` re-derives
+ * `recordsUpTo` and `closedLapses` from the habit's creation on every call -- O(n) evaluations
+ * each doing O(i) work, before `isDoneOnDay`'s own per-date linear scan of `logs` is even
+ * counted. `recordsUpTo`/`closedLapses` are both pure functions of `asOfDate` alone, and every
+ * `asOfDate` this walk ever asks about is one particular element of the single ascending sequence
+ * `scheduledOpportunitiesUpTo(habit, periods, today)` -- so records "up to" the i-th opportunity
+ * are always exactly a length-(i+1) prefix of the records "up to" `today`, and closed lapses "as
+ * of" the i-th opportunity are always exactly the subset of closed lapses "as of" `today` whose
+ * `recoveredDate` falls at or before it (both follow from `closedLapses`/`opportunityRecords`
+ * being pure, strictly left-to-right forward scans with no lookahead: truncating the full-history
+ * trace after processing a given record yields exactly what running the same scan on that prefix
+ * alone would have produced). This function computes each of the two once, for the full range,
+ * and reuses a slice/subset per step instead of re-deriving from scratch -- the completion index
+ * above replaces `isDoneOnDay`'s own repeated per-date scan the same way. Every step still calls
+ * the same, unmodified `classifyFromRecords` used by `candidateStateAt`, so the classification
+ * rules themselves are touched by nothing here.
  */
 export function confirmedStateAt(
   habit: Habit,
@@ -233,10 +302,36 @@ export function confirmedStateAt(
   today: string,
 ): MomentumStateKey {
   const opportunities = scheduledOpportunitiesUpTo(habit, periods, today);
-  // Every walk step gets the same real `today`, not its own date as a stand-in for it -- each
-  // earlier opportunity is a resolved past fact by the time it's scanned, and only the walk's
-  // final step (date === today) can ever have a pending record to set aside.
-  const candidates = opportunities.map((date) => candidateStateAt(habit, periods, logs, date, today));
+  const completionByDate = buildCompletionIndex(habit, logs, opportunities);
+  const allRecords: OpportunityRecord[] = opportunities.map((date) => ({
+    date,
+    completed: completionByDate.get(date) ?? false,
+  }));
+
+  // Closed lapses "as of" the i-th opportunity are exactly the subset of the full-history closed
+  // lapses whose recoveredDate falls at or before that opportunity's date -- see this function's
+  // doc comment above. allLapses is ascending by recoveredDate because closedLapses discovers
+  // them via a single left-to-right scan and only ever appends, so a two-pointer walk in lockstep
+  // with the ascending opportunity list reaches the identical per-step subset in amortized O(1)
+  // per step rather than re-deriving it from scratch at every step.
+  const allLapses = closedLapses(habit, periods, logs, today);
+  let lapseCursor = 0;
+  const lapsesSoFar: ClosedLapse[] = [];
+
+  const candidates: MomentumStateKey[] = [];
+  for (let i = 0; i < allRecords.length; i += 1) {
+    const asOfDate = allRecords[i].date;
+    while (lapseCursor < allLapses.length && allLapses[lapseCursor].recoveredDate <= asOfDate) {
+      lapsesSoFar.push(allLapses[lapseCursor]);
+      lapseCursor += 1;
+    }
+    // Every walk step gets the same real `today`, not its own date as a stand-in for it -- each
+    // earlier opportunity is a resolved past fact by the time it's scanned, and only the walk's
+    // final step (date === today) can ever have a pending record to set aside.
+    const recordsSoFar = allRecords.slice(0, i + 1);
+    candidates.push(classifyFromRecords(recordsSoFar, lapsesSoFar, today));
+  }
+
   return computeConfirmedMomentumState(candidates);
 }
 
@@ -262,10 +357,10 @@ const EVIDENCE_RANK: Partial<Record<MomentumStateKey, number>> = Object.fromEntr
  * undefined, which is why a window containing any of them has always failed Rule 2's
  * chain-comparability check entirely (Rule 3, retain).
  *
- * `recovering` and `rebuilding` are positive-family: both require, by their own `candidateStateAt`
- * definition (`isRecentShortRecovery`, `isRebuilding`), that the window's most recent opportunity
- * was itself a completion -- closing a lapse is affirmative evidence, not an absence of it. This
- * floor gives Rule 2's minimum calculation a value for them: the chain's weakest rung
+ * `recovering` and `rebuilding` are positive-family: both require, by their own `classifyFromRecords`
+ * definition (`isRecentShortRecoveryFromLapses`, `isRebuildingFromLapses`), that the window's most
+ * recent opportunity was itself a completion -- closing a lapse is affirmative evidence, not an
+ * absence of it. This floor gives Rule 2's minimum calculation a value for them: the chain's weakest rung
  * (`EVIDENCE_RANK.building`), and no more. It orders nothing: it draws no distinction between
  * `recovering` and `rebuilding` (both map to the identical floor value), and it says nothing about
  * either relative to any chain state beyond that one fixed value -- a window containing one can
