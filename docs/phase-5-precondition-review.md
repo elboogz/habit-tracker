@@ -28,6 +28,50 @@ A signal telling the user their habit is too ambitious, which then does not hold
 
 **Required opening for A2, per the A3 decision below.** A2 must begin by restating, explicitly and as a stated input to its own reasoning rather than as background, that **A3 has already narrowed its evidence set**: habit-edit history and reminder-interaction history do not exist and are deferred, so Habit Health in the initial implementation cannot depend on either. This weakens the available evidence for two of the three illustrative signals without blocking the required concept. See "A3 consequence" below. The constraint is settled and is not to be re-litigated or rediscovered inside A2; what remains open to A2 is which signals ship, on what evidence, and whether the concept takes stability treatment.
 
+*(This obligation was met: the A2 analysis opened by restating A3's narrowing before any reasoning, and the MVP scope below is a direct consequence of it.)*
+
+### A2 decision, approved 2026-09-08: no exception to the single-hysteresis rule
+
+**No exception is granted, and none is needed.** The contradiction recorded above is apparent, not real.
+
+**1. It dissolves the way the `Rhythm` question did, and for the same documented reason.** `CLAUDE.md`'s confirmed-or-not boundary already contemplates volatile non-Momentum signals and rules that volatility does not earn them the fold: *"Any behavioural signal that does not pass through that fold ... is a single-pass stateless computation and is not a Momentum State, **regardless of how volatile it is or how it's surfaced**."* Habit Health sitting on the unconfirmed side is coherent **by the rule's own text, not by extension of it**. It is not a new case the boundary fails to cover.
+
+**2. Volatility is a property of the horizon chosen, not of the concept.** This is the durable finding and is recorded so that anyone extending Habit Health later does not reintroduce the problem by reaching for a short window. **One event in a window of N moves the value by exactly 1/N.** That is arithmetic, not an empirical accident. Measured across 21 consecutive days of a realistic 150-day history, running the real domain functions with each day taken in turn as `today`:
+
+| Input | Max movement per day | Days it moved |
+|---|---|---|
+| Lifetime completion rate (N ≈ 146) | 0.6 pp | 20/20 |
+| Reduced-completion share | 0.1 pp | 1/20 |
+| Average Recovery Time | 0.07 d | 6/20 |
+| Consistency, 60-day | 1.7 pp | 10/20 |
+| Recovery Rate, lifetime | 2.8 pp | 8/20 |
+| Consistency, 14-day | 7.2 pp ( = 1/14) | 13/20 |
+| Recovery Rate, rolling (N = 10) | 10.0 pp ( = 1/10) | 2/20 |
+| Consistency, 7-day | 14.3 pp ( = 1/7) | 12/20 |
+| **Trend direction, `momentum(…, 5)`** | **0.45 on a [-1,1] scale** | **17/20** |
+
+Habit Health built on long-horizon aggregates is therefore an order of magnitude more stable than the same concept built on a short trailing window. For contrast, the confirmed Momentum State — which *does* pass through the fold — still changed twice within the same 21 days. The fold does not produce constancy; it requires evidence for transitions.
+
+**3. Input stability does not imply signal stability. This is the finding most likely to be forgotten and is recorded prominently for that reason.** A threshold applied to a slow-moving input can still chatter if the value sits near it. Probing an arbitrary boundary against the measured lifetime completion rate — an input that never moved more than **0.6 percentage points** in a day — produced **seven on/off flips in 21 days**. Stability of an input is necessary and not sufficient; what matters additionally is where any boundary sits relative to the operating range.
+
+**4. A stateless minimum-sample gate is an approved mechanism.** It is a pure function of the current data and introduces no state, so it does not engage the single-hysteresis rule. Precedent exists in shipped code: `RECOVERY_CONFIG.minResolvedLapsesForPercentage` (3) and `RECOVERY_CONFIG.minClosedLapsesForRecoveryTime` (2) both gate display until evidence suffices, and `CLAUDE.md` names `recoveryRate` and `averageRecoveryTime` as stateless single-pass computations while they carry those gates.
+
+**5. Tripwire, recorded so it is not crossed inside an implementation.** A **deadband** — entering at one threshold and exiting at another — makes the output depend on the previous output and therefore requires state. That would be a **genuine exception** demanding an **amendment to `CLAUDE.md`'s "hysteresis exists in exactly one place", not a reinterpretation of it**. It is **not needed on the current evidence**. Should it ever appear necessary, that is a decision to bring back to the account owner, **not one to take inside an implementation**.
+
+### Habit Health MVP scope, approved 2026-09-08: one signal
+
+**Ship exactly one signal in the initial implementation:**
+
+> "This habit has become easier or more established over recent weeks."
+
+Shipping a subset is not a specification deviation: the locked specification marks its three named signals as *"Examples of signals the coach may communicate"* (line 346), one of the eight explicitly illustrative markers catalogued under A3 above. The **Habit Health concept itself remains required** and is being built; only its signal set is scoped.
+
+**Reasoning: it is the only one of the three that depends on nothing A3 excluded.** The other two lean on evidence A3 deliberately made unavailable — "this habit may be too ambitious" on habit-edit history, and the wrong-time reading of "scheduled at the wrong time or on the wrong days" on reminder-interaction history. **Building either on substitute evidence now would be exactly the weaker-evidence substitution that A3's decision forbade.** They are deferred with their inputs, not rejected.
+
+**Constraint on how this signal is computed, following directly from the measurements above: it must not be built on `momentum(…, window)`.** That was the most volatile quantity measured — moving on 17 of 20 days and swinging 0.45 on a two-wide scale — precisely because it is a small-window quantity. A long-horizon comparison must be used instead, drawing only on evidence genuinely available after A3.
+
+**The 60-day window used during the A2 probe, and every other horizon exercised there, was diagnostic instrumentation and carries no product authority.** Horizon lengths, numerical thresholds and any anti-chatter margin belong to the Phase 5 implementation design, after the architecture below is approved.
+
 ### A3. Two of the specification's ten named coach inputs are not derivable from stored data
 
 | Specification input | Status |
@@ -162,7 +206,7 @@ Item 1 matters most: Phase 5 must rewrite prompts in **both** functions, and `CL
 
 ## Summary
 
-Nothing recorded here blocks Phase 5 permanently. Of the three decisions needed before a plan can be written, **two are now made**: A1 (mechanism — see §D1) and A3 (habit edits and reminder usage deferred, not removed). **A2 alone remains open**, and must open by restating A3's narrowing of its evidence set. Six constraints should shape the plan rather than be discovered mid-build (B1-B6). The C-items were defects rather than design questions and have been handled separately: C1 fixed and deployed 2026-09-08, C3 fixed in `a442a03`, C2 still open and now more exposed than when it was recorded.
+Nothing recorded here blocks Phase 5 permanently. **All three decisions needed before a plan can be written are now made**: A1 (mechanism — whitelist extension for both functions, §D1), A3 (habit edits and reminder usage deferred, not removed), and A2 (no exception to the single-hysteresis rule, plus a one-signal Habit Health MVP). What remains before implementation is the architecture report those decisions gate: the long-horizon comparison, the gate's evidence quantity, the `CoachFacts` value shape, and the truthfulness guarantee for a characterisation the numeric validator cannot check. Six constraints should shape the plan rather than be discovered mid-build (B1-B6). The C-items were defects rather than design questions and have been handled separately: C1 fixed and deployed 2026-09-08, C3 fixed in `a442a03`, C2 still open and now more exposed than when it was recorded.
 
 Phase 5 has not begun. This document does not authorize starting it.
 
