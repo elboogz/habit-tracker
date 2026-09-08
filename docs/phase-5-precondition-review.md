@@ -64,6 +64,8 @@ Habit Health built on long-horizon aggregates is therefore an order of magnitude
 
 > "This habit has become easier or more established over recent weeks."
 
+**That sentence identifies *which* signal is being shipped. It is not the copy that will ship.** It is the locked specification's own illustrative phrasing, and decision 7 of the architecture below records that it overclaims relative to what the approved mechanism establishes. Final user-facing wording is deferred and must be derived from the mechanism.
+
 Shipping a subset is not a specification deviation: the locked specification marks its three named signals as *"Examples of signals the coach may communicate"* (line 346), one of the eight explicitly illustrative markers catalogued under A3 above. The **Habit Health concept itself remains required** and is being built; only its signal set is scoped.
 
 **Reasoning: it is the only one of the three that depends on nothing A3 excluded.** The other two lean on evidence A3 deliberately made unavailable — "this habit may be too ambitious" on habit-edit history, and the wrong-time reading of "scheduled at the wrong time or on the wrong days" on reminder-interaction history. **Building either on substitute evidence now would be exactly the weaker-evidence substitution that A3's decision forbade.** They are deferred with their inputs, not rejected.
@@ -71,6 +73,46 @@ Shipping a subset is not a specification deviation: the locked specification mar
 **Constraint on how this signal is computed, following directly from the measurements above: it must not be built on `momentum(…, window)`.** That was the most volatile quantity measured — moving on 17 of 20 days and swinging 0.45 on a two-wide scale — precisely because it is a small-window quantity. A long-horizon comparison must be used instead, drawing only on evidence genuinely available after A3.
 
 **The 60-day window used during the A2 probe, and every other horizon exercised there, was diagnostic instrumentation and carries no product authority.** Horizon lengths, numerical thresholds and any anti-chatter margin belong to the Phase 5 implementation design, after the architecture below is approved.
+
+### Habit Health architecture, approved 2026-09-08
+
+Approving the architecture only. **Block lengths, numerical thresholds, `CONFIG` values, enum member names and final user-facing wording are all deferred to Phase 5 implementation design and are not decided here.**
+
+**1. Long-horizon comparison — approved.** Two adjacent, **equal-length** blocks of Scheduled Opportunities, comparing the recent block's completion rate against the immediately preceding block's. Block length is not decided here.
+
+**Scheduled Opportunities are preserved as the denominator** so that non-daily schedules and pauses behave correctly: a paused stretch contributes no opportunities rather than a run of false misses, which a calendar-day denominator would produce.
+
+Recorded so the shape is not mistaken for the thing A2 ruled against: this is `momentum()`'s *form* at a corrected horizon. The A2 constraint was against the small-N function, not against differencing two windows. With both denominators large, the difference moves at roughly 2/N per day rather than the 0.45-per-day swing measured at N=5.
+
+**2. Minimum-sample architecture — approved.** Gate on the **Scheduled Opportunity count in the smaller of the two comparison blocks**, since the comparison is only as strong as its weaker side.
+
+**Neither existing Recovery gate may be reused: they carry different denominators.** `minResolvedLapsesForPercentage` counts resolved pairwise lapse instances and `minClosedLapsesForRecoveryTime` counts closed lapses — both lapse-denominated, where this gate is opportunity-denominated. The codebase already exercised exactly this care once: `lib/domain/config.ts` records that the value 3 "was deliberately not reused" when the second gate was introduced.
+
+**A distinct Habit Health `CONFIG` value will therefore be required**, in `lib/domain/config.ts` by convention. Its numerical value is not chosen here.
+
+**3. Closed Habit Health value — approved.** A closed string-literal enum, one flat scalar per habit, **not a boolean** — because *insufficient evidence* must remain distinct from *evidence that does not support the positive signal*. Collapsing them would push that distinction into the presentation layer to re-derive, which is the `isNew` gating defect already removed once in Phase 4.
+
+**Constraint: do not expand this into a broader Habit Health taxonomy.** The MVP contains one signal, so the closed value need only represent the distinctions that signal genuinely requires. Member names belong to implementation design.
+
+**4. Supporting comparison rates are excluded from `CoachFacts` for the initial implementation — approved.** The deterministic domain layer owns the inference. `CoachFacts` transports the resulting verdict, not the underlying percentages, and so does not invite the model to re-derive the verdict from them.
+
+**The accepted cost, recorded so it is not re-opened by accident:** this forgoes the validator coverage those numerals would have carried, since a number absent from `CoachFacts` is not in the enumerable set. That is a deliberate trade of validator surface for architectural clarity, not an oversight. If a later product decision gives the coach a genuine user-facing reason to quote those rates, their inclusion can be reconsidered then.
+
+**5. No general semantic or characterisation validator — approved as a non-precondition for Phase 5.**
+
+The limitation, recorded accurately: **numeric-membership validation cannot independently verify a non-numeric Habit Health characterisation.** The MVP signal contains no numeral, so the validator described in §D2 gives it no coverage.
+
+**For the MVP, truthfulness is enforced structurally rather than by output inspection:** the deterministic domain layer derives the Habit Health verdict; `CoachFacts` transports that closed verdict; the coach may verbalise it but **may not independently infer Habit Health from underlying behavioural data**.
+
+Prompt constraints and tests should prevent the coach from **inventing a Habit Health claim when the corresponding verdict is absent**, and from **extending the verdict into unsupported causal, predictive or exaggerated claims**. **Do not attempt to solve general natural-language entailment.** A general semantic validator is explicitly not a Phase 5 precondition and must not become one.
+
+**6. The semantic qualification is preserved.** The approved comparison **directly establishes an improvement in completion rate** across Scheduled Opportunities between two adjacent blocks. It does **not** by itself establish that the habit subjectively feels *easier*, nor necessarily that it has become *established* in the broader sense of increased stability or fewer lapses.
+
+The architecture is **not** to be redesigned around that wording. The distinction is recorded so that eventual user-facing copy is constrained to what the deterministic signal actually establishes.
+
+**7. The specification's own phrasing of this signal is illustrative, and overclaims relative to the approved mechanism.** "This habit has become easier or more established over recent weeks" is one of the specification's explicitly illustrative examples (line 346, among the eight illustrative markers catalogued under A3). Measured against decision 6, it asserts subjective ease and broad establishment where the mechanism establishes a completion-rate improvement between two adjacent long-horizon blocks.
+
+**The eventual user-facing wording must therefore be derived from the mechanism, not copied from the specification's example sentence.** Copying it would ship a claim the domain layer cannot support, and would land precisely in the space decision 5 identifies as unverifiable — a non-numeric characterisation whose intensity nothing mechanical bounds. The wording is additionally bound by `CLAUDE.md`'s user-facing copy contract. Final wording is deferred to implementation design.
 
 ### A3. Two of the specification's ten named coach inputs are not derivable from stored data
 
@@ -206,7 +248,7 @@ Item 1 matters most: Phase 5 must rewrite prompts in **both** functions, and `CL
 
 ## Summary
 
-Nothing recorded here blocks Phase 5 permanently. **All three decisions needed before a plan can be written are now made**: A1 (mechanism — whitelist extension for both functions, §D1), A3 (habit edits and reminder usage deferred, not removed), and A2 (no exception to the single-hysteresis rule, plus a one-signal Habit Health MVP). What remains before implementation is the architecture report those decisions gate: the long-horizon comparison, the gate's evidence quantity, the `CoachFacts` value shape, and the truthfulness guarantee for a characterisation the numeric validator cannot check. Six constraints should shape the plan rather than be discovered mid-build (B1-B6). The C-items were defects rather than design questions and have been handled separately: C1 fixed and deployed 2026-09-08, C3 fixed in `a442a03`, C2 still open and now more exposed than when it was recorded.
+Nothing recorded here blocks Phase 5 permanently. **All three decisions needed before a plan can be written are now made**: A1 (mechanism — whitelist extension for both functions, §D1), A3 (habit edits and reminder usage deferred, not removed), and A2 (no exception to the single-hysteresis rule, plus a one-signal Habit Health MVP). The Habit Health architecture those decisions gated is **also approved** (see "Habit Health architecture"). What remains is Phase 5 implementation design, which is deliberately un-started: block lengths, the Habit Health `CONFIG` value, enum member names, and final user-facing wording derived from the mechanism rather than from the specification's illustrative sentence. Six constraints should shape the plan rather than be discovered mid-build (B1-B6). The C-items were defects rather than design questions and have been handled separately: C1 fixed and deployed 2026-09-08, C3 fixed in `a442a03`, C2 still open and now more exposed than when it was recorded.
 
 Phase 5 has not begun. This document does not authorize starting it.
 
