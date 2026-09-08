@@ -232,6 +232,40 @@ Both functions call `claude-sonnet-4-6` with `output_config: { effort }`. That p
 
 The reason is the same attribution property that puts the type-check guard before the whitelist extension, against a sharper confusion: **B1 and B6 are confusable at exactly the same moment.** When the extended whitelist is first pasted and something fails, "the extension is internally incomplete" and "a stale file was pasted" are indistinguishable without a stamp. Because the stamp is itself a change to both functions, **it must be deployed and verified on its own first**, establishing the known-good baseline — deploying it alongside the whitelist extension would forfeit the very baseline that is the point of doing it first.
 
+### B6 live baseline verified, 2026-09-08
+
+Both Edge Functions were re-pasted into the Supabase Dashboard and verified **in isolation**, with no Phase 5 change included in the paste. This is the known-good baseline that §D4 step 3 was gated on.
+
+| Function | `block` | `file` | Matches repository |
+|---|---|---|---|
+| `ai-insights` | `be472da09aa4` | `9042dc1c3d7c` | yes |
+| `send-coaching-push` | `be472da09aa4` | `c88749f30503` | yes |
+
+- **`block` values equal across both functions** → deployed from the same generated revision.
+- **Each `file` value matches the repository** → both current, no stale pair.
+- **The `GET` short-circuit on `send-coaching-push` returned its stamp without running the coaching job** — no user iteration, no Claude call, no push sent. The no-side-effects property held in production, not only in review.
+
+**Correction to the verification commands.** The Supabase API gateway requires an `Authorization` header on **every** Edge Function call, independently of whatever authentication the function itself performs. The `send-coaching-push` command as first written supplied only `x-cron-secret` and was rejected at the gateway before reaching the function. The two headers do different jobs and both are required: the **anon key as bearer** satisfies the gateway, and the **cron secret** satisfies the function's own check. `ai-insights` was unaffected because its user JWT already serves as the gateway's `Authorization`.
+
+Corrected commands, as actually run:
+
+```bash
+# ai-insights — the user JWT doubles as the gateway Authorization
+curl -s -X POST 'https://<PROJECT-REF>.supabase.co/functions/v1/ai-insights' \
+  -H "Authorization: Bearer $USER_JWT" \
+  -H "apikey: $SUPABASE_ANON_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"kind":"nudge"}' | jq .stamp
+
+# send-coaching-push — anon key for the gateway, cron secret for the function
+curl -s -X GET 'https://<PROJECT-REF>.supabase.co/functions/v1/send-coaching-push' \
+  -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+  -H "apikey: $SUPABASE_ANON_KEY" \
+  -H "x-cron-secret: $CRON_SECRET" | jq .stamp
+```
+
+**B6 is closed. With it, every Phase 5 precondition is closed.**
+
 ### Original framing, superseded by the decision above
 
 **Not decided here.** Whether Phase 5 should address deployment drift, and by what mechanism, is a decision for the plan. Options worth weighing when it is written, none of them chosen: a commit stamp embedded in each function and echoed in its response or logs, so the running version is observable; replacing the hand-paste with a CLI deploy; or a checked-in record of the last-pasted commit per function, which is the cheapest and the weakest since nothing enforces that it is updated. The observation is recorded as a risk; the response belongs in the plan.
