@@ -1,4 +1,4 @@
-import { MOMENTUM_CONFIG, RECOVERY_CONFIG } from './config';
+import { HABIT_HEALTH_CONFIG, MOMENTUM_CONFIG, RECOVERY_CONFIG } from './config';
 
 // Pins the approved threshold values so a future accidental edit here is a deliberate,
 // reviewed test change rather than a silent drift in behavior.
@@ -23,5 +23,13 @@ describe('MOMENTUM_CONFIG', () => {
     expect(MOMENTUM_CONFIG.recovering.window).toBe(3);
     expect(MOMENTUM_CONFIG.rebuilding.window).toBe(5);
     expect(MOMENTUM_CONFIG.quiet.window).toBe(3);
+  });
+});
+
+describe('HABIT_HEALTH_CONFIG', () => {
+  it('matches the approved constants (docs/phase-5-plan.md section 4.1)', () => {
+    expect(HABIT_HEALTH_CONFIG.comparisonBlockOpportunities).toBe(14);
+    expect(HABIT_HEALTH_CONFIG.minOpportunitiesInSmallerBlock).toBe(10);
+    expect(HABIT_HEALTH_CONFIG.minRateImprovement).toBe(0.25);
   });
 });
