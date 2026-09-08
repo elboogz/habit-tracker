@@ -144,6 +144,16 @@ function calendarConsistency(habit: Habit, logs: HabitLog[], days: number, asOfD
 
 // END GENERATED DOMAIN
 
+// Deployment stamp, written by scripts/build-edge-functions.js -- never edit these values by hand.
+// Both Edge Functions are hand-pasted into the Supabase Dashboard, so a deployed copy can fall
+// behind the repository silently; this makes that detectable by request instead of by eye.
+//   block -- fingerprints the generated domain block above. Identical in both Edge Functions, so
+//            comparing the two answers "are these from the same generated revision?"
+//   file  -- fingerprints this whole file with only this line neutralized, so comparing it against
+//            the repository answers "is what's deployed current?"
+// See docs/phase-5-precondition-review.md, B6.
+const SOURCE_STAMP = { block: 'be472da09aa4', file: '9042dc1c3d7c' };
+
 // The prompt asks Claude to avoid em dashes and emoji in the body, but it doesn't always comply.
 // This deterministically enforces both: dashes are replaced with commas/sentence breaks, and any
 // emoji that slip through are stripped (the UI adds its own emoji to section titles).
@@ -242,7 +252,7 @@ Deno.serve(async (req) => {
 
     if (existing) {
       return new Response(
-        JSON.stringify({ content: sanitizeContent(existing.content), createdAt: existing.created_at, kind }),
+        JSON.stringify({ content: sanitizeContent(existing.content), createdAt: existing.created_at, kind, stamp: SOURCE_STAMP }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
@@ -277,7 +287,7 @@ Deno.serve(async (req) => {
         kind === 'nudge'
           ? "Add a habit and log it a few times to get your first personalized tip! \u{1F331}"
           : 'Once you’ve logged some habits, check back here for a personalized reflection.';
-      return new Response(JSON.stringify({ content, createdAt: new Date().toISOString(), kind }), {
+      return new Response(JSON.stringify({ content, createdAt: new Date().toISOString(), kind, stamp: SOURCE_STAMP }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -317,7 +327,7 @@ Deno.serve(async (req) => {
       model: 'claude-sonnet-4-6',
     });
 
-    return new Response(JSON.stringify({ content, createdAt: new Date().toISOString(), kind }), {
+    return new Response(JSON.stringify({ content, createdAt: new Date().toISOString(), kind, stamp: SOURCE_STAMP }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {

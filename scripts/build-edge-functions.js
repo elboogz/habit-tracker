@@ -14,6 +14,7 @@
 // Run with: npm run build:edge-functions
 'use strict';
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
@@ -43,6 +44,49 @@ const TARGET_FILES = [
 
 const BEGIN_MARKER = '// BEGIN GENERATED DOMAIN -- DO NOT EDIT BELOW. Regenerate with `npm run build:edge-functions`.';
 const END_MARKER = '// END GENERATED DOMAIN';
+
+// Deployment stamp (docs/phase-5-precondition-review.md, B6). Both Edge Functions are hand-pasted
+// into the Supabase Dashboard, so the deployed copy can silently fall weeks behind the repo -- that
+// has already happened once, undetected. Each file therefore carries two generated fingerprints:
+//   block -- the generated domain block, identical in both files, so comparing the two answers
+//            "are these two deployed functions from the same generated revision?"
+//   file  -- the whole file with only its own stamp line neutralized, so comparing it against the
+//            repository answers "is what's deployed the current revision?"
+// The stamp line is blanked before hashing so a file's stamp never feeds its own fingerprint. That
+// is what keeps regeneration idempotent and stops the freshness test above from failing after
+// unrelated commits -- a git HEAD SHA would have broken both properties.
+const STAMP_LINE_RE = /^const SOURCE_STAMP = .*$/m;
+const STAMP_PLACEHOLDER_LINE = 'const SOURCE_STAMP = <PLACEHOLDER>;';
+
+/** sha256 truncated to 12 hex chars: long enough to be unambiguous here, short enough to compare by eye. */
+function fingerprint(text) {
+  return crypto.createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 12);
+}
+
+/**
+ * The file with only its stamp line neutralized. Everything else is included in the hash --
+ * prompts, DB reads, the hand-maintained type shims, and the generated block. Fingerprinting only
+ * the generated block would not be enough: the C1 prompt fix changed no generated code at all, so
+ * a block-only stamp would have reported "current" while that fix sat undeployed.
+ */
+function blankStampLine(source, fileName) {
+  if (!STAMP_LINE_RE.test(source)) {
+    throw new Error(
+      `${fileName} is missing its \`const SOURCE_STAMP = ...\` line -- seed it once by hand, ` +
+        'after which this script owns its value and no human ever edits it.',
+    );
+  }
+  return source.replace(STAMP_LINE_RE, STAMP_PLACEHOLDER_LINE);
+}
+
+function applyStamp(source, blockFingerprint, fileName) {
+  const fileFingerprint = fingerprint(blankStampLine(source, fileName));
+  const stamped = source.replace(
+    STAMP_LINE_RE,
+    `const SOURCE_STAMP = { block: '${blockFingerprint}', file: '${fileFingerprint}' };`,
+  );
+  return { source: stamped, fileFingerprint };
+}
 
 // Refuses to generate if the shared domain layer has picked up a dependency that would break
 // either runtime. Enforced every time this script runs, not left to code-review discipline --
@@ -148,16 +192,21 @@ function spliceIntoFile(filePath, generatedBlock) {
 
 function main() {
   const generatedBlock = buildGeneratedBlock();
+  const blockFingerprint = fingerprint(generatedBlock);
   for (const filePath of TARGET_FILES) {
-    const next = spliceIntoFile(filePath, generatedBlock);
-    fs.writeFileSync(filePath, next);
-    console.log(`Regenerated ${path.relative(ROOT, filePath)}`);
+    const relative = path.relative(ROOT, filePath);
+    const spliced = spliceIntoFile(filePath, generatedBlock);
+    const { source, fileFingerprint } = applyStamp(spliced, blockFingerprint, relative);
+    fs.writeFileSync(filePath, source);
+    // Printed so the repository-side values are readable without opening the files -- these are
+    // what a live function's response should be compared against after a paste.
+    console.log(`Regenerated ${relative}  block=${blockFingerprint} file=${fileFingerprint}`);
   }
 }
 
 // Exported for scripts/build-edge-functions.test.ts to unit-test the import-safety guard
 // directly, rather than only checking it indirectly through the freshness test.
-module.exports = { assertNoDisallowedDependencies, extractDeclarations };
+module.exports = { assertNoDisallowedDependencies, extractDeclarations, fingerprint, blankStampLine, STAMP_LINE_RE };
 
 if (require.main === module) {
   main();

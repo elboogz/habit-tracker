@@ -38,7 +38,13 @@ describe('generated Edge Function domain blocks', () => {
 // The generator is a plain CommonJS Node script (scripts/build-edge-functions.js), not part of
 // the TS project, so it's required rather than imported.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { assertNoDisallowedDependencies, extractDeclarations } = require('./build-edge-functions.js');
+const {
+  assertNoDisallowedDependencies,
+  extractDeclarations,
+  fingerprint,
+  blankStampLine,
+  STAMP_LINE_RE,
+} = require('./build-edge-functions.js');
 
 describe('import-safety guard', () => {
   it('rejects a disallowed dependency in the shared domain layer', () => {
@@ -50,6 +56,40 @@ describe('import-safety guard', () => {
 
   it('allows a dependency-free source file', () => {
     expect(() => assertNoDisallowedDependencies("import type { Habit } from '../habit-types';\nexport function f() {}\n", 'fake.ts')).not.toThrow();
+  });
+});
+
+// Deployment stamp (docs/phase-5-precondition-review.md, B6). The freshness test above compares the
+// repository against itself and structurally cannot see the Supabase Dashboard; these assertions
+// guard the stamp that makes the deployed revision observable instead.
+describe('deployment stamp', () => {
+  function readStamp(file: string) {
+    const source = fs.readFileSync(file, 'utf8');
+    const line = source.match(STAMP_LINE_RE)?.[0] ?? '';
+    return {
+      source,
+      block: line.match(/block: '([0-9a-f]+)'/)?.[1],
+      file: line.match(/file: '([0-9a-f]+)'/)?.[1],
+    };
+  }
+
+  it('carries the same block fingerprint in both functions -- this is what answers "same generated revision?"', () => {
+    const [a, b] = TARGETS.map(readStamp);
+    expect(a.block).toMatch(/^[0-9a-f]{12}$/);
+    expect(a.block).toBe(b.block);
+  });
+
+  it('carries a per-file fingerprint that matches a freshly computed one -- catches a hand-edited stamp', () => {
+    for (const target of TARGETS) {
+      const { source, file } = readStamp(target);
+      expect(file).toMatch(/^[0-9a-f]{12}$/);
+      expect(file).toBe(fingerprint(blankStampLine(source, target)));
+    }
+  });
+
+  it('has distinct file fingerprints, since each covers its whole file rather than the shared block', () => {
+    const [a, b] = TARGETS.map(readStamp);
+    expect(a.file).not.toBe(b.file);
   });
 });
 

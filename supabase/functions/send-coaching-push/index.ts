@@ -130,6 +130,16 @@ function calendarConsistency(habit: Habit, logs: HabitLog[], days: number, asOfD
 
 // END GENERATED DOMAIN
 
+// Deployment stamp, written by scripts/build-edge-functions.js -- never edit these values by hand.
+// Both Edge Functions are hand-pasted into the Supabase Dashboard, so a deployed copy can fall
+// behind the repository silently; this makes that detectable by request instead of by eye.
+//   block -- fingerprints the generated domain block above. Identical in both Edge Functions, so
+//            comparing the two answers "are these from the same generated revision?"
+//   file  -- fingerprints this whole file with only this line neutralized, so comparing it against
+//            the repository answers "is what's deployed current?"
+// See docs/phase-5-precondition-review.md, B6.
+const SOURCE_STAMP = { block: 'be472da09aa4', file: 'c88749f30503' };
+
 // Row shapes as returned by Supabase (snake_case, matching the Postgres columns directly) --
 // adapted below to the shared domain layer's camelCase shape, mirroring the same job
 // lib/supabase-sync.ts does client-side (rowToHabit/rowToLog) for the same reason: the generated
@@ -226,24 +236,26 @@ Deno.serve(async (req) => {
   // be callable by the Supabase Cron scheduler, not by arbitrary callers.
   // Set CRON_SECRET as a Supabase Edge Function secret and pass it as the
   // x-cron-secret header in the Supabase Cron scheduler configuration.
-  // Reject any HTTP method other than POST (cron uses POST).
-  if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
+  //
+  // Branch order below is deliberate and load-bearing: authenticate FIRST, for every method, then
+  // branch on method. An authenticated GET returns the deployment stamp and nothing else, and it
+  // returns before the Supabase client is constructed, before any database read, before Anthropic
+  // is touched and before any push is sent -- there is no later guard it depends on. Only POST
+  // reaches the job itself.
 
+  // 1. Fail closed: with no secret configured, refuse everything rather than ever running with
+  //    service-role privileges for an arbitrary caller.
   const cronSecret = Deno.env.get('CRON_SECRET');
   if (!cronSecret) {
-    // Fail closed: if the secret is not configured, refuse all requests rather than
-    // accidentally running with service-role privileges for any caller.
     console.error('send-coaching-push: CRON_SECRET secret is not configured');
     return new Response(JSON.stringify({ error: 'Service misconfigured' }), {
       status: 503,
       headers: { 'Content-Type': 'application/json' },
     });
   }
+
+  // 2. Authenticate every caller, whatever the method. Nothing below this point is reachable
+  //    without the cron secret.
   if (req.headers.get('x-cron-secret') !== cronSecret) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
@@ -251,6 +263,24 @@ Deno.serve(async (req) => {
     });
   }
 
+  // 3. Deployment identification only. No side effects of any kind: this function is the one that
+  //    reaches users without them opening the app, so reading its version must never be capable of
+  //    sending a notification. See docs/phase-5-precondition-review.md, B6.
+  if (req.method === 'GET') {
+    return new Response(JSON.stringify({ stamp: SOURCE_STAMP }), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  // 4. Cron uses POST; reject anything else.
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  // 5. POST: the real job. Everything from here on is unchanged.
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
   const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY') });
   const now = new Date();
@@ -319,7 +349,7 @@ Deno.serve(async (req) => {
     }
   }
 
-  return new Response(JSON.stringify({ sent, checked: recipients?.length ?? 0 }), {
+  return new Response(JSON.stringify({ sent, checked: recipients?.length ?? 0, stamp: SOURCE_STAMP }), {
     headers: { 'Content-Type': 'application/json' },
   });
 });
