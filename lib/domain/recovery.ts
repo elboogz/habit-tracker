@@ -7,7 +7,7 @@ import { addDays, daysBetween, localDayKeyOf } from './day-key';
 import { isDoneOnDay } from './habit-stats';
 import { nextScheduledOpportunityAfter, scheduledOpportunitiesUpTo } from './schedule';
 
-type OpportunityRecord = { date: string; completed: boolean };
+export type OpportunityRecord = { date: string; completed: boolean };
 
 function opportunityRecords(
   habit: Habit,

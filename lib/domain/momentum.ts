@@ -6,7 +6,7 @@
 import type { Habit, HabitLog, HabitSchedulePeriod } from '../habit-types';
 import { MOMENTUM_CONFIG } from './config';
 import { isDoneOnDay } from './habit-stats';
-import { closedLapses, type ClosedLapse } from './recovery';
+import { closedLapses, type ClosedLapse, type OpportunityRecord } from './recovery';
 import { scheduledOpportunitiesUpTo } from './schedule';
 
 export type MomentumStateKey =
@@ -17,8 +17,6 @@ export type MomentumStateKey =
   | 'rebuilding'
   | 'thriving'
   | 'quiet';
-
-type OpportunityRecord = { date: string; completed: boolean };
 
 function recordsUpTo(habit: Habit, periods: HabitSchedulePeriod[], logs: HabitLog[], asOfDate: string): OpportunityRecord[] {
   return scheduledOpportunitiesUpTo(habit, periods, asOfDate).map((date) => ({

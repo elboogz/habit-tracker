@@ -118,9 +118,16 @@ function assertNoDisallowedDependencies(source, fileName) {
 }
 
 // Extracts exactly the named top-level `function`/`type`/`const` declarations from `source`,
-// each with any contiguous comment block directly above it, in source order. Brace-depth is
-// tracked to find each declaration's end; a same-line open+close (e.g. a one-line type alias)
-// closes immediately.
+// each with any contiguous comment block directly above it, in source order. Brace-depth and
+// paren-depth are both tracked, outside of comments, to find each declaration's end; a same-line
+// open+close (e.g. a one-line type alias) closes immediately. Paren-depth exists because a
+// parameter list can contain an inline object-type annotation (e.g. `cfg: { a: number }`) whose
+// braces would otherwise self-balance to zero before the declaration's real body has opened.
+// Comment-awareness exists because prose can itself contain unbalanced parentheses (e.g. a
+// half-open interval like "(3/14, 4/14]"), which must not be counted as code. This still does not
+// understand every lexical construct -- brace/paren/comment-like characters inside a string,
+// template, or regex literal are not specially handled -- see
+// scripts/build-edge-functions.ast-equivalence.test.ts, which is the safeguard against that class.
 function extractDeclarations(source, names) {
   const nameSet = new Set(names);
   const lines = source.split('\n');
@@ -135,19 +142,45 @@ function extractDeclarations(source, names) {
       while (start > 0 && /^\s*(\/\*\*|\*\/|\*|\/\/)/.test(lines[start - 1])) start -= 1;
 
       let depth = 0;
+      let parenDepth = 0;
       let seenOpen = false;
+      let inBlockComment = false;
       let end = i;
       for (; end < lines.length; end += 1) {
-        for (const ch of lines[end]) {
+        const line = lines[end];
+        let idx = 0;
+        while (idx < line.length) {
+          if (inBlockComment) {
+            const closeIdx = line.indexOf('*/', idx);
+            if (closeIdx === -1) {
+              idx = line.length;
+              break;
+            }
+            inBlockComment = false;
+            idx = closeIdx + 2;
+            continue;
+          }
+          if (line.startsWith('/*', idx)) {
+            inBlockComment = true;
+            idx += 2;
+            continue;
+          }
+          if (line.startsWith('//', idx)) break;
+          const ch = line[idx];
           if (ch === '{') {
             depth += 1;
             seenOpen = true;
           } else if (ch === '}') {
             depth -= 1;
+          } else if (ch === '(') {
+            parenDepth += 1;
+          } else if (ch === ')') {
+            parenDepth -= 1;
           }
+          idx += 1;
         }
-        if (seenOpen && depth === 0) break;
-        if (!seenOpen && /;\s*$/.test(lines[end])) break;
+        if (seenOpen && depth === 0 && parenDepth <= 0) break;
+        if (!seenOpen && parenDepth <= 0 && /;\s*$/.test(line)) break;
       }
 
       chunks.push(lines.slice(start, end + 1).join('\n'));
@@ -205,8 +238,10 @@ function main() {
 }
 
 // Exported for scripts/build-edge-functions.test.ts to unit-test the import-safety guard
-// directly, rather than only checking it indirectly through the freshness test.
-module.exports = { assertNoDisallowedDependencies, extractDeclarations, fingerprint, blankStampLine, STAMP_LINE_RE };
+// directly, rather than only checking it indirectly through the freshness test. SOURCES is
+// exported so scripts/build-edge-functions.ast-equivalence.test.ts can derive its coverage from
+// the generator's own whitelist rather than a hand-maintained copy that could drift from it.
+module.exports = { assertNoDisallowedDependencies, extractDeclarations, fingerprint, blankStampLine, STAMP_LINE_RE, SOURCES };
 
 if (require.main === module) {
   main();

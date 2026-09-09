@@ -455,6 +455,8 @@ They stay **hand-maintained and guarded by the Step 1 type check.** The generato
 
 **This departs from B1's stated assumption**, recorded so the departure is visible rather than implicit. B1 concluded that "the generator itself would need changing". The justification for departing is a fact that did not exist when B1 was written: **the Step 1 guard converts a stale-shim failure from silent to loud.** A missing `createdAt` becomes a compile error in `npm test` — which is the failure mode the generator change was meant to prevent, obtained without generator complexity. B1's analysis was correct on the evidence available to it; the guard changes that evidence.
 
+**That "silent to loud" claim covers `Habit.createdAt` only, not the other three shims. [Amended]** It rests on `toDomainHabit` already existing and already constructing a `Habit` — once `createdAt` becomes required, an omitted mapping is a concrete type error. `HabitSchedulePeriod`, `ScheduleDays`, `LapseReasonEntry` and `LapseReasonKey` have no equivalent converter yet: every closure function that touches them only *consumes* a value already in hand, none *constructs* one, so there is nothing for the guard to type-check if the caller-side mapper that builds one is simply never written. The guard can confirm these three shims' shapes are internally consistent with how the generated code reads them (verified directly, not assumed — see §10), but it cannot detect the mapper's total absence. See §10 for the covered-versus-uncovered distinction this implies, and §6.2 for the Step 4 task that closes it.
+
 ## 6.2 Step 4 — DB-read widening and call-site cutover (second paste)
 
 - add `created_at` to the habits select in both functions;
@@ -462,6 +464,43 @@ They stay **hand-maintained and guarded by the Step 1 type check.** The generato
 - add `habit_schedule_periods` and `lapse_reasons` reads;
 - switch call sites from `calendarConsistency` to schedule-aware `consistency`;
 - call `buildCoachFacts`.
+
+### Caller-side row mappers, in both Edge Functions **[New]**
+
+The `habit_schedule_periods` and `lapse_reasons` reads above are not enough on their own — each needs a caller-side mapper turning its snake_case Postgres row into the camelCase domain shape `buildCoachFacts`/`buildHabitCoachFacts` accept, mirroring `toDomainHabit`/`toDomainLogs`. This is the task §10's row-shim register entry names as the uncovered class: the Step 1 guard cannot detect this mapper's absence, only its type-incompatibility once written. Mirror the existing client-side precedents exactly rather than deriving the shape independently:
+
+- `rowToPeriod` — `lib/supabase-sync.ts:168-178`
+- `rowToLapseReason` — `lib/supabase-sync.ts:194-205`
+
+**Schedule period mapping.** `days_of_week: null` must map to `days: 'daily'` — a semantic conversion, not a column rename, and the specific case a careless mapper is most likely to get wrong (see below). A non-null `days_of_week` value becomes the corresponding weekday array unchanged. Also: `habit_id` → `habitId`, `effective_from` → `effectiveFrom`, `paused` → `paused`, `created_at` → `createdAt`.
+
+**Lapse reason mapping.** Postgres returns `reason` as `string | null`; the domain expects `LapseReasonKey | null`. A cast is required to cross that boundary, matching the existing client-side precedent — but see the open question immediately below before deciding what an unsupported value does. Also: `habit_id` → `habitId`, `created_at` → `createdAt`.
+
+#### Open question: unrecognised lapse reasons **[Report — do not resolve before Step 4]**
+
+Do not assume every non-null database string is one of the five `LapseReasonKey` literals. Before Step 4 chooses behaviour, report:
+
+1. whether the schema constrains `reason` to the five supported domain values;
+2. whether existing stored data can contain any other value;
+3. whether Supabase-generated typing narrows this column, or still exposes it as plain `string | null`.
+
+Only after that evidence is in should coercing to `null`, coercing to `something_else`, throwing, or passing the value through unchanged be chosen — these are product/data-integrity decisions, not mapper mechanics, and none of them is pre-authorised.
+
+#### Step 4 mapper tests, against realistic row shapes **[New]**
+
+Targeted tests, not covered by the Step 1 guard or by Step 2's domain tests, because they exercise a boundary neither owns: the DB-row-to-domain conversion itself. Fixtures must begin from the actual snake_case row shape a real `select` returns — constructing an object already shaped like `HabitSchedulePeriod`/`LapseReasonEntry` and asserting the mapper preserves it does not test this boundary at all.
+
+Schedule rows, at minimum: `days_of_week === null` → `days === 'daily'`; a non-null weekday array survives unchanged; `habit_id`/`effective_from`/`paused`/`created_at` each map correctly.
+
+Lapse rows, at minimum: `reason === null` stays `null`; a supported non-null reason survives as the corresponding `LapseReasonKey`; `habit_id`/`created_at` map correctly; every row field actually consumed by `CoachFacts` or Recovery maps correctly.
+
+**Why this needs a dedicated test, not just `tsc`.** Three distinct failure classes exist here, and only the tests below cover the third:
+
+1. a required mapper is completely absent — the Step 1 guard cannot detect this (§10);
+2. a mapper exists but is type-incompatible — the strict guard detects this once the mapper exists;
+3. a mapper exists, type-checks, and has incorrect semantics — TypeScript does not detect this at all.
+
+Class 3 is the dangerous one. `days_of_week: null` → `days: []` type-checks perfectly while silently turning a daily habit into one with no scheduled opportunities — and the downstream result stays superficially plausible rather than obviously broken: Habit Health sits in `insufficient_evidence`, schedule-aware Consistency has a zero-opportunity denominator, and coaching simply appears to have very little to say. That is exactly the shape of bug that would otherwise surface only as a vague tester report much later. These tests are the control for that class, and belong in Step 4 alongside the mappers themselves, not before.
 
 **C2 resolves here, at Steps 3 and 4 together, not at Step 3 alone.**
 
@@ -832,6 +871,8 @@ Named here so none is discovered by a tester.
 | Phase resonance: any block length can straddle phase for a habit whose rhythm is not a divisor of it | Known limitation of the mechanism, not tunable. |
 | Habit Health false positive on a steady low-completion habit (~7.5% of days at 60% completion, measured) | Accepted cost of a stateless signal without a deadband. |
 | Duplicated prompt text drift between the two functions | Detected by repository test plus `file` stamp, not prevented. |
+| **Row-type shims split into two failure classes with different coverage. [New]** §6.1's "silent to loud" claim (Step 1 guard converts a stale-shim failure into a compile error) holds for the **covered class only: existing-converter completeness.** `Habit.createdAt` is the instance — `toDomainHabit` already exists and already constructs a `Habit`, so an omitted field is a concrete `tsc` error the guard surfaces. `HabitSchedulePeriod`, `ScheduleDays`, `LapseReasonEntry` and `LapseReasonKey` are the **uncovered class: converter existence.** No caller-side mapper builds any of these four from a raw Postgres row yet (confirmed by direct empirical test: adding the four shim types alone, with `Habit.createdAt` deliberately left unwidened, produces zero new `tsc` errors under the strict guard — every generated function that touches them only consumes a value already in hand, none constructs one). If Step 4 omits the mapper entirely, there is nothing for TypeScript to type-check, so the guard cannot detect the omission; a caller could pass empty/default collections and produce plausible but incorrect facts (schedule-blind, lapse-blind) with no compile error anywhere. Closed by the Step 4 mapper task (§6.2) and its dedicated tests, not by the Step 1 guard, which was never built to prove a converter's *existence* — only, once one exists, that it type-checks. | Accepted for Step 3 (no call site reads real schedule/lapse data yet, so the gap has no live consequence today). Must close in Step 4, mechanically (mappers) and empirically (dedicated tests per §6.2), before `buildCoachFacts` is called with real data. |
+| **`scripts/build-edge-functions.ast-equivalence.test.ts` proves end-boundary and content correctness, not start-boundary correctness. [New]** For every `SOURCES` declaration it confirms `extractDeclarations`' output ends with that declaration's true AST-derived span (export-normalised) — this catches outright truncation (the shipped `meetsRateWindow` defect) and end-boundary over-extension into a following declaration (the `HABIT_HEALTH_CONFIG` shape found while designing the fix, which never shipped), because both change what the extraction ends with. It does **not** prove extraction begins at the earliest correct boundary: a hypothetical bug that starts too early, swallowing trailing material from the *preceding* declaration while still ending at exactly the right place, would satisfy this assertion undetected — `endsWith` only inspects the suffix. `ts.Node.getFullStart()` was evaluated as a route to exact byte equality, which would close this gap outright; empirically it aligns with `extractDeclarations`' own leading-comment capture for every non-first-in-file declaration, but for a file's first top-level statement it has no preceding statement to bound it and reaches back into that file's own module-header comment instead (confirmed against `dayKey`, the one current `SOURCES` symbol this applies to). Closing that would mean reconstructing the extractor's own contiguous-comment-line back-scan a second time as reconciliation logic — not built. | Accepted. The manual Gate A / Gate B byte-equivalence comparison against a known-good baseline (§6.1) remains the **required** check whenever `SOURCES` or the extractor itself is materially extended — this repository test is a continuous regression control for the current whitelist, not a substitute for that comparison at extension time. |
 
 ---
 

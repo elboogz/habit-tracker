@@ -44,7 +44,7 @@ export type HabitHealthVerdict = 'insufficient_evidence' | 'no_positive_recent_c
  * calls it on an empty block in practice: both blocks are only ever measured once the evidence
  * gate (>= 1 opportunity) has already passed.
  */
-function completionRate(habit: Habit, logs: HabitLog[], dates: string[]): number {
+function blockCompletionRate(habit: Habit, logs: HabitLog[], dates: string[]): number {
   if (dates.length === 0) return 0;
   const doneCount = dates.filter((date) => isDoneOnDay(habit, logs, date)).length;
   return doneCount / dates.length;
@@ -95,8 +95,8 @@ export function habitHealthVerdict(
 
   if (Math.min(recent.length, preceding.length) < gate) return 'insufficient_evidence';
 
-  const recentRate = completionRate(habit, logs, recent);
-  const precedingRate = completionRate(habit, logs, preceding);
+  const recentRate = blockCompletionRate(habit, logs, recent);
+  const precedingRate = blockCompletionRate(habit, logs, preceding);
 
   return recentRate - precedingRate >= margin ? 'positive_recent_comparison' : 'no_positive_recent_comparison';
 }
