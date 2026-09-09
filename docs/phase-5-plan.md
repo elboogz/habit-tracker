@@ -289,8 +289,17 @@ export function buildCoachFacts(
   schedulePeriods: HabitSchedulePeriod[],
   lapseReasons: LapseReasonEntry[],
   today: string,
+  kind: CoachFactsKind,
 ): CoachFacts;
 ```
+
+**`kind` added during Step 2 part 2 implementation. [Ruled]** The signature as originally drafted carried no `kind` or `windowDays` parameter, which would have forced Consistency to use one canonical window regardless of which coaching output was being grounded — a real departure from the pre-Phase-5 Edge Functions' per-kind windows (`ai-insights/index.ts`'s `KIND_CONFIG.windowDays`: nudge 14, weekly 7, monthly 30), reported as an unresolved interpretation point in the Step 2 part 2 review. **Resolved: `kind: CoachFactsKind` (`'nudge' | 'weekly' | 'monthly'`) is added as the final parameter, and the 14/7/30 windows are restored exactly.**
+
+**Placement, corrected before the Step 2 part 2 commit. [Ruled]** The mapping was first implemented as a local constant in `coach-facts.ts`, because `lib/domain/config.ts` was outside Step 2 part 2's hard boundary while the 14/7/30 values were still an open interpretation point. Once approved, that reason no longer applied, and carrying the placement debt into Step 3 had no benefit. **`CoachFactsKind` and `CONSISTENCY_WINDOW_DAYS_BY_KIND` now live in `lib/domain/config.ts`**, alongside `RECOVERY_CONFIG`/`MOMENTUM_CONFIG`/`HABIT_HEALTH_CONFIG` — the single source of truth for every Phase 2+ domain threshold, matching the convention every other config value in this document already follows. `coach-facts.ts` imports both and re-exports the type, so its own callers (`buildCoachFacts`'s `kind` parameter) never need to know it originates in `config.ts`; `buildCoachFacts` remains the map's only reader. The 14/7/30 values are pinned in `lib/domain/config.test.ts`, alongside `RECOVERY_CONFIG`/`MOMENTUM_CONFIG`/`HABIT_HEALTH_CONFIG`'s own pins, not duplicated in `coach-facts.test.ts`. This is a mechanical placement correction only — the values, `CoachFactsKind`'s semantics, and `buildCoachFacts`'s behaviour are all unchanged, and no other Step 2 part 2 logic moved into `config.ts`.
+
+`kind` affects **only** `consistencyPct` and `consistencyWindowOpportunities`. Every other fact (Momentum State, Recovery Rate, Recovery Time, Total Completions, recovery count, lapse-reason distribution, Habit Health) is computed identically regardless of kind.
+
+**On `consistencyWindowOpportunities` varying by kind — reported, not silently changed.** The field's definition is unchanged ("the Scheduled Opportunity count in that same window — Consistency's own denominator"); what changes is that "that same window" is now kind-relative rather than fixed. For the same habit, the same log history, and the same `today`, `consistencyWindowOpportunities` (and `consistencyPct`) will differ across a nudge call, a weekly call, and a monthly call — this is expected and correct, not a bug or an inconsistency to reconcile: a 30-day adherence figure is not a different measurement of the same quantity a 7-day figure measures, it is a measurement of a different quantity. Both are true facts about the habit at once, the same way a confirmed Momentum State and a lifetime statistic can both be true without needing to agree (CLAUDE.md's "opportunity-local and history-level facts are expected to coexist without reconciliation"). Verified directly: `lib/domain/coach-facts.test.ts`'s kind-mapping suite constructs one habit history and confirms all three kinds' opportunity counts and percentages independently, including a fixture where the completion pattern differs enough across the three windows that the percentages themselves diverge (not just the denominators).
 
 `CoachFacts` is flat and numeric-leaved, with a fixed per-habit element shape, so the enumerable set of numbers the model may state is mechanically derivable from the type and pinnable by a test (§D2).
 
@@ -330,6 +339,22 @@ Every numeric fact requires an identified existing Phase 5 coaching purpose. Not
 ### Excluded by A3, structurally **[Ruled]**
 
 Habit edit history and reminder usage do not appear in `CoachFacts`. Because the enumerable set is the leaf fields of a closed type, the exclusion holds structurally rather than by instruction.
+
+### Average Recovery Time rounding — recorded **[Ruled]**
+
+`averageRecoveryTimeDays` is rounded to **one decimal place** at construction time (`Math.round(avgRecoveryDays * 10) / 10`), not left as the raw mean `averageRecoveryTime()` returns. Not settled anywhere in the plan text as drafted — the "approved rounding behaviour" discussion was specifically about percent/decimal equivalence, not durations — and reported as an interpretation point in the Step 2 part 2 review. **Confirmed as the intended rounding.** Chosen to match the client's own existing display convention (`app/(tabs)/progress.tsx:136`'s `avgRecoveryDays.toFixed(1)`), and it is the only rounding step for this field: `lib/domain/coach-validation.ts` checks the already-rounded value exactly, carrying no tolerance of its own.
+
+### Spelled-out numerals — none implemented **[Ruled]**
+
+`lib/domain/coach-validation.ts` recognises **only digit-form numerals**. No cardinal-word-to-number parsing ("three", "twelve", "a dozen") is implemented anywhere in the validator.
+
+This resolves a genuine tension the plan's own text left open, reported rather than resolved silently during Step 2 part 2: §6.4 states twice that the validator "still deterministically handles supported spelled-out numeric forms where practical," but no concrete list of supported forms exists anywhere in this document, the verification report, or the precondition review — and the plan's own named residual example, "you usually return in three days," is *itself* a spelled-out number the same section says is not inspected. A minimal word list (even just zero through twenty) would have closed that named example rather than left it open, which would have been opportunistic scope expansion rather than implementing something already required. **Resolution: implement none.** The "where practical" language is aspirational and not a concrete requirement; the residual example stands exactly as written. The two `KNOWN ACCEPTED RESIDUAL` tests in `coach-validation.test.ts` assert this directly — including the sharper case of a *false* spelled-out claim ("ten days" against a true fact of 3) also reporting `valid: true`, proving the gap is "wrong and still passes," not merely "unchecked."
+
+### The `Pct` naming convention — resolved to an explicit list **[Ruled]**
+
+The Step 2 part 2 review used a naming-convention rule (any `HabitCoachFacts` key ending in `Pct` gets the percent/decimal/bare-integer equivalence) and flagged it for review as a coupling risk: a field renamed to no longer end in `Pct` would silently lose that treatment without either file appearing to change incorrectly.
+
+**Resolved: the explicit, type-checked list is safer, and is what's implemented.** `coach-facts.ts` exports `RATE_FIELD_NAMES: ReadonlyArray<keyof HabitCoachFacts>`, currently `['recoveryRatePct', 'consistencyPct']`. `coach-validation.ts` imports this list directly rather than testing key names with `.endsWith('Pct')`. Because the list's type is `keyof HabitCoachFacts`, a typo or a stale entry left behind after a field is renamed is a compile error, not a silent behavioural change — strictly stronger than a string-suffix convention, which TypeScript cannot check at all. The `Pct` suffix remains in each field's own name purely as human-readable documentation; it carries no logic.
 
 ## 4.3 `lib/domain/coach-validation.ts`
 
@@ -572,9 +597,40 @@ if (hasGroundedInsight(facts)) → generate + validate + (on pass) return/cache/
 else                          → deterministic fallback message; no model call
 ```
 
-`hasGroundedInsight(facts)` is a pure predicate over `CoachFacts` alone, defined and unit-tested in Step 2. **The fallback path is unreachable whenever grounded facts exist.** It is not a prompt instruction, not a model choice, and not a ranking — it is an `else`.
+`hasGroundedInsight(facts)` is a pure predicate over `CoachFacts` alone, defined and unit-tested in Step 2 (in `coach-facts.ts`, alongside the type it reads — implemented and tested as part of Step 2 part 2, per the amendment immediately below). **The fallback path is unreachable whenever grounded facts exist.** It is not a prompt instruction, not a model choice, and not a ranking — it is an `else`.
 
-**Interaction with validator rejection, stated explicitly. [New]** A validation rejection is **not** a route into the fallback. Rejection means the grounded path was taken and failed, and §6.6 governs what happens then. Allowing rejection to fall through to a generic tip would let a validator failure silently downgrade the product's core surface, and would make rejection invisible in exactly the case worth noticing.
+### `hasGroundedInsight`, revised: which Momentum states qualify **[Ruled — Step 2 part 2 amendment]**
+
+An earlier implementation treated *every* Momentum State other than `insufficient_data` as an eligible grounded insight. That reading is **not adopted**, on a concrete consequence surfaced during implementation and reported rather than resolved silently: because a habit's Momentum State is almost always something other than `insufficient_data` once any real history exists, the broad reading made the deterministic fallback reachable mainly during a brand-new habit's onboarding window — not the case the fallback exists to cover, which is an **established** habit with no particularly useful personalised behavioural story to tell right now.
+
+**Revised rule — grounded personalised insight exists, for at least one habit, when:**
+
+- Momentum State is one of `recovering`, `rebuilding`, `building`, or `thriving`; **or**
+- Habit Health is exactly `positive_recent_comparison`.
+
+`steady`, `quiet`, and `insufficient_data` do **not** qualify on their own. **This is a coaching-eligibility decision only — it changes nothing about what any Momentum State means, how it is computed, its thresholds, or its hysteresis.** `steady` does not mean stagnation or failure; `insufficient_data` does not mean poor performance; `quiet` does not mean decline. All three remain exactly the domain states CLAUDE.md's Momentum contracts describe. The only thing this rule decides is which states, on their own, occupy the coaching slot.
+
+**Why `recovering`/`rebuilding` remain unconditionally qualifying.** These are the product's core recovery-first story — §6.3 rule 1's "recovery and return lead when the return is the story" — and the settled rule that recovery context must be deterministically derived from `CoachFacts`, never chosen by the model, continues to hold exactly as before.
+
+**Why `building`/`thriving` remain qualifying.** The settled Momentum model treats both as active behavioural narratives suitable for personalised coaching. No grading is introduced between them, or between either and the recovery-family pair above.
+
+**Why `quiet` is excluded — recorded explicitly, because it is the least obvious of the three and must not read as inattention or as lumped in with `steady` for convenience.** A dormant habit is a moment where supportive habit-support guidance is more useful than an observation about the dormancy itself. Any personalised comment the coach could make about a quiet habit risks reading as a negative characterisation of the user, which the settled coaching rules forbid outright. Offering a way back in serves the user better than describing the gap. This is an eligibility judgement, not a claim that `quiet` is a lesser or worse state than any other.
+
+**Why `steady` is excluded.** The settled coaching goals (avoid all-or-nothing thinking, recognise genuine progress, identify patterns) describe *movement* — toward recovery, toward a stronger streak, toward or away from a target. An unchanging steady state is precisely the case with no movement to describe. Grounded personalised coaching remains available for a `steady` habit whenever Habit Health independently supplies one, so this narrows one signal rather than removing the habit from coaching altogether.
+
+**Habit Health qualifies independently of Momentum.** A `steady` or `quiet` habit paired with `habitHealth === 'positive_recent_comparison'` is still eligible, through Habit Health rather than Momentum.
+
+**Lapse reasons remain contextual, not an independent trigger.** They continue to contextualise an already-eligible personalised insight and are preferred to inferred explanations when relevant (§6.3 rule 4), but do not by themselves manufacture a personalised coaching story — a habit with only lapse-reason data populated, and neither a qualifying Momentum State nor a positive Habit Health verdict, is not eligible.
+
+**Selection remains message-level, using `.some`, approved for MVP as a product decision rather than an implementation accident.** If any habit in the current coaching payload has an eligible grounded insight, the whole coaching request takes the grounded path. Per-habit fallback composition — grounding some habits in one message while falling back for others — is **not built**: it would introduce mixed-output selection and orchestration complexity out of scope for Phase 5.
+
+**No novelty or history state is introduced to make this narrower rule work**, and none should be inferred as implied by it: no tracking of what was previously surfaced, no timestamps, no ranking infrastructure, no second hysteresis mechanism, no new `CoachFacts` fields, no new schema, no model judgement about which insight is "interesting," no general-purpose selection engine. `hasGroundedInsight` remains a pure, deterministic, stateless predicate over the existing `CoachFacts` shape.
+
+**Consequence for Step 5, recorded now rather than discovered there.** `steady` is likely the most common Momentum State for a habit that is simply being done consistently. Under the revised rule, the deterministic fallback therefore becomes a **common path**, not an edge case, for the established-habit population. **The closed message set Step 5 builds carries real product weight and must not be treated as filler.** This is a scope note for Step 5, not authorisation to build the message set now — it remains explicitly out of Step 2 part 2's scope.
+
+**Revisit trigger, recorded for after MVP testing.** If testers report that established-habit coaching feels repetitive, generic, or poorly timed, the first step is to assess whether the issue is copy and content quality within the existing closed message set, **before** reaching for historical novelty state or a more complex ranking mechanism. Do not build either mechanism now; this paragraph authorises nothing beyond that later assessment.
+
+**Interaction with validator rejection, stated explicitly. [New]** A validation rejection is **not** a route into the fallback. Rejection means the grounded path was taken and failed, and §6.6 governs what happens then. Allowing rejection to fall through to a generic tip would let a validator failure silently downgrade the product's core surface, and would make rejection invisible in exactly the case worth noticing. This holds unchanged under the revised eligibility rule above.
 
 If this minimal fallback materially complicates Step 5, the retained scope is the orchestration hook and a very small closed message set only. Anything richer is Phase 6 or Product Polish.
 

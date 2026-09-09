@@ -1,4 +1,4 @@
-import { HABIT_HEALTH_CONFIG, MOMENTUM_CONFIG, RECOVERY_CONFIG } from './config';
+import { CONSISTENCY_WINDOW_DAYS_BY_KIND, HABIT_HEALTH_CONFIG, MOMENTUM_CONFIG, RECOVERY_CONFIG } from './config';
 
 // Pins the approved threshold values so a future accidental edit here is a deliberate,
 // reviewed test change rather than a silent drift in behavior.
@@ -31,5 +31,11 @@ describe('HABIT_HEALTH_CONFIG', () => {
     expect(HABIT_HEALTH_CONFIG.comparisonBlockOpportunities).toBe(14);
     expect(HABIT_HEALTH_CONFIG.minOpportunitiesInSmallerBlock).toBe(10);
     expect(HABIT_HEALTH_CONFIG.minRateImprovement).toBe(0.25);
+  });
+});
+
+describe('CONSISTENCY_WINDOW_DAYS_BY_KIND', () => {
+  it('matches the approved per-kind Consistency windows (docs/phase-5-plan.md section 4.2), restoring the pre-Phase-5 Edge Function values', () => {
+    expect(CONSISTENCY_WINDOW_DAYS_BY_KIND).toEqual({ nudge: 14, weekly: 7, monthly: 30 });
   });
 });

@@ -66,3 +66,28 @@ export const HABIT_HEALTH_CONFIG = {
    */
   minRateImprovement: 0.25,
 } as const;
+
+/**
+ * Which of the three coaching outputs `lib/domain/coach-facts.ts`'s `buildCoachFacts` is being
+ * asked to ground (Phase 5, Step 2 part 2). Defined here rather than imported from either Edge
+ * Function: `lib/domain/` does not depend on `supabase/functions/`, and this is the domain layer's
+ * own canonical definition of the three coaching kinds -- Step 3's whitelist is what will
+ * eventually let the Edge Functions consume it, not the other way around. `coach-facts.ts`
+ * re-exports this type so its own consumers never need to know it originates here.
+ */
+export type CoachFactsKind = 'nudge' | 'weekly' | 'monthly';
+
+/**
+ * The Consistency window, in calendar days, per coaching kind -- restores the pre-Phase-5 Edge
+ * Functions' per-kind windows (`ai-insights/index.ts`'s `KIND_CONFIG.windowDays`: nudge 14, weekly
+ * 7, monthly 30) rather than the single canonical window an earlier draft of `coach-facts.ts` used
+ * regardless of kind. `buildCoachFacts` is the only reader; centralised here (moved from
+ * `coach-facts.ts` once the values were settled) rather than in that file, matching every other
+ * Phase 2+ domain threshold's single-source-of-truth home. Affects only `consistencyPct` and
+ * `consistencyWindowOpportunities` -- every other `CoachFacts` field is kind-independent.
+ */
+export const CONSISTENCY_WINDOW_DAYS_BY_KIND: Record<CoachFactsKind, number> = {
+  nudge: 14,
+  weekly: 7,
+  monthly: 30,
+} as const;
