@@ -457,9 +457,23 @@ They stay **hand-maintained and guarded by the Step 1 type check.** The generato
 
 **That "silent to loud" claim covers `Habit.createdAt` only, not the other three shims. [Amended]** It rests on `toDomainHabit` already existing and already constructing a `Habit` — once `createdAt` becomes required, an omitted mapping is a concrete type error. `HabitSchedulePeriod`, `ScheduleDays`, `LapseReasonEntry` and `LapseReasonKey` have no equivalent converter yet: every closure function that touches them only *consumes* a value already in hand, none *constructs* one, so there is nothing for the guard to type-check if the caller-side mapper that builds one is simply never written. The guard can confirm these three shims' shapes are internally consistent with how the generated code reads them (verified directly, not assumed — see §10), but it cannot detect the mapper's total absence. See §10 for the covered-versus-uncovered distinction this implies, and §6.2 for the Step 4 task that closes it.
 
+### Step 3 boundary amendment: `habits.created_at` **[Amended, ruled]**
+
+Step 3's boundary originally said no DB-read changes at all. That boundary is now explicitly amended for **one field only**, `habits.created_at`, added to the existing `habits` projection in both Edge Functions — not a new query, not a new table, not a schedule-period or lapse-reason read.
+
+> `habits.created_at` is added to the two existing habit projections because the approved generated closure requires `Habit.createdAt`, the existing `toDomainHabit` conversion must truthfully populate it, and the query/type boundary is not schema-connected strongly enough for the Step 1 guard to detect an omitted selected column.
+
+This is a deliberate boundary amendment, not a reclassification of the change as non-behavioural: the query issued to Postgres really does change (5 columns to 6, in both functions), even though nothing consumes the new field yet. Verified empirically before the ruling, not assumed: reverting only the `.select()` string while keeping `Habit`/`HabitRow`/`toDomainHabit` widened produces a clean `tsc` pass, because `createClient` is stubbed `any` for the Step 1 guard and the select string has no type-level connection to `HabitRow` at all. That is the mechanism behind the limitation recorded next.
+
+**Step 1 guard limitation, exposed by this exercise. [New]**
+
+> The Step 1 strict guard proves the converter/type surface is internally consistent, but it does not prove that a textual Supabase `.select()` actually supplies every field claimed by a hand-maintained row shim.
+
+Not generalised into new infrastructure now — the Step 4 realistic-row mapper tests (below) already cover the more important upcoming DB-to-domain boundaries, and this is recorded as a named, accepted limitation rather than a gap to close with a new mechanism. See §10.
+
 ## 6.2 Step 4 — DB-read widening and call-site cutover (second paste)
 
-- add `created_at` to the habits select in both functions;
+- `habits.created_at` projection moved to Step 3 under the §6.1 boundary amendment and is already complete. It is therefore not a Step 4 task;
 - widen the `habit_logs` window (§8);
 - add `habit_schedule_periods` and `lapse_reasons` reads;
 - switch call sites from `calendarConsistency` to schedule-aware `consistency`;
@@ -519,6 +533,21 @@ Extend the pattern already proven side-effect-free: `ai-insights` gains one auth
 ## 6.3 Step 5 — Prompts, validator, fallback, cutover (third paste)
 
 Rewrite prompts in both functions to consume `CoachFacts`; wire `validateCoachOutput` before returning, before caching, and before pushing; wire the fallback orchestration; remove the Step 4 diagnostic; clear the affected cache at cutover.
+
+### Legacy-symbol cleanup check **[Check, not pre-authorised]**
+
+Step 3 retained five symbols in `SOURCES` that have no path from the three approved closure roots (`buildCoachFacts`, `hasGroundedInsight`, `validateCoachOutput`) — `countForDay`, `calendarStreakForHabit`, `DayStatus`, `recentHistory`, `calendarConsistency` (all `habit-stats.ts`) — kept only because both Edge Functions' pre-Phase-5 `calendar*` prompt-building code still called them directly at the time Step 3 extended the whitelist.
+
+Once this step's prompt rewrite removes those remaining legacy call sites, **recompute whether the five still have any live consumer**, and report, before removing anything:
+
+1. every remaining repository reference to each of the five symbols;
+2. whether any non-prompt or other live Edge Function path still requires them;
+3. the resulting proposed `SOURCES` diff;
+4. the regenerated generated-domain block hash that their removal would produce.
+
+**This is a check, not a pre-authorised removal.** If none has a live consumer, report the finding and propose removing them from `SOURCES` so the generated block returns to the approved root-derived closure only — do not remove them without separate approval of that report.
+
+**If removal is later approved, it is a cross-cutting generated-block change, not a local cleanup:** the generated-domain block hash changes (by construction — the block's content changes), so it cannot be committed without re-pasting both functions. Treat it exactly like any other generator-driven change: regenerate both Edge Functions, confirm the `block` fingerprint is identical across both (per B6), paste both together, and verify each deployed full-file `file` hash against its own repository source. Recorded explicitly here so this cleanup is never mistaken for a harmless local refactor later.
 
 ### Coaching behaviour rules **[Ruled]**
 
@@ -872,6 +901,7 @@ Named here so none is discovered by a tester.
 | Habit Health false positive on a steady low-completion habit (~7.5% of days at 60% completion, measured) | Accepted cost of a stateless signal without a deadband. |
 | Duplicated prompt text drift between the two functions | Detected by repository test plus `file` stamp, not prevented. |
 | **Row-type shims split into two failure classes with different coverage. [New]** §6.1's "silent to loud" claim (Step 1 guard converts a stale-shim failure into a compile error) holds for the **covered class only: existing-converter completeness.** `Habit.createdAt` is the instance — `toDomainHabit` already exists and already constructs a `Habit`, so an omitted field is a concrete `tsc` error the guard surfaces. `HabitSchedulePeriod`, `ScheduleDays`, `LapseReasonEntry` and `LapseReasonKey` are the **uncovered class: converter existence.** No caller-side mapper builds any of these four from a raw Postgres row yet (confirmed by direct empirical test: adding the four shim types alone, with `Habit.createdAt` deliberately left unwidened, produces zero new `tsc` errors under the strict guard — every generated function that touches them only consumes a value already in hand, none constructs one). If Step 4 omits the mapper entirely, there is nothing for TypeScript to type-check, so the guard cannot detect the omission; a caller could pass empty/default collections and produce plausible but incorrect facts (schedule-blind, lapse-blind) with no compile error anywhere. Closed by the Step 4 mapper task (§6.2) and its dedicated tests, not by the Step 1 guard, which was never built to prove a converter's *existence* — only, once one exists, that it type-checks. | Accepted for Step 3 (no call site reads real schedule/lapse data yet, so the gap has no live consequence today). Must close in Step 4, mechanically (mappers) and empirically (dedicated tests per §6.2), before `buildCoachFacts` is called with real data. |
+| **The Step 1 strict guard cannot detect an under-selected `.select()` string. [New]** Proves the converter/type surface is internally consistent (a hand-maintained row shim's fields are used the way the generated code expects), but not that a textual Supabase `.select()` actually supplies every field the shim claims. Confirmed empirically during the `habits.created_at` boundary decision (§6.1): reverting only the `.select()` string while leaving `Habit`/`HabitRow`/`toDomainHabit` widened produced a clean `tsc` pass, because `createClient` is stubbed `any` for the guard and the select string has no type-level link to `HabitRow` at all — the same would be true for any other column, in either function, at any time. | Accepted, not generalised into new infrastructure. The Step 4 realistic-row mapper tests (§6.2) are the control for the more important upcoming instance of this same class (`habit_schedule_periods`/`lapse_reasons`), where a mapper can exist, type-check, and still be semantically wrong — see that section's three-failure-class breakdown. |
 | **`scripts/build-edge-functions.ast-equivalence.test.ts` proves end-boundary and content correctness, not start-boundary correctness. [New]** For every `SOURCES` declaration it confirms `extractDeclarations`' output ends with that declaration's true AST-derived span (export-normalised) — this catches outright truncation (the shipped `meetsRateWindow` defect) and end-boundary over-extension into a following declaration (the `HABIT_HEALTH_CONFIG` shape found while designing the fix, which never shipped), because both change what the extraction ends with. It does **not** prove extraction begins at the earliest correct boundary: a hypothetical bug that starts too early, swallowing trailing material from the *preceding* declaration while still ending at exactly the right place, would satisfy this assertion undetected — `endsWith` only inspects the suffix. `ts.Node.getFullStart()` was evaluated as a route to exact byte equality, which would close this gap outright; empirically it aligns with `extractDeclarations`' own leading-comment capture for every non-first-in-file declaration, but for a file's first top-level statement it has no preceding statement to bound it and reaches back into that file's own module-header comment instead (confirmed against `dayKey`, the one current `SOURCES` symbol this applies to). Closing that would mean reconstructing the extractor's own contiguous-comment-line back-scan a second time as reconciliation logic — not built. | Accepted. The manual Gate A / Gate B byte-equivalence comparison against a known-good baseline (§6.1) remains the **required** check whenever `SOURCES` or the extractor itself is materially extended — this repository test is a continuous regression control for the current whitelist, not a substitute for that comparison at extension time. |
 
 ---

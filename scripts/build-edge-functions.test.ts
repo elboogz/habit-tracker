@@ -266,16 +266,44 @@ declare const createClient: any;
     expect(output).toMatch(/error TS2304: Cannot find name 'calendarConsistency'/);
   });
 
-  it("catches a stale-shim failure: a hand-maintained row/type shim missing a field the generated code uses (the stale-shim class; Habit.createdAt is the concrete instance Step 4 will introduce)", () => {
+  it("catches a stale-shim failure: a hand-maintained row/type shim missing a field the generated code uses (the stale-shim class)", () => {
     const source = fs.readFileSync(TARGETS[0], 'utf8'); // ai-insights
-    // The current hand-maintained `Habit` shim (supabase/functions/ai-insights/index.ts) has no
-    // `createdAt` -- true today only because nothing in the current pre-Phase-5 whitelist reads
-    // it. This appends one standalone reference that does, the same shape Step 3/4's
-    // isScheduledOpportunity will introduce, to prove the guard would catch the gap the day it
-    // starts mattering rather than silently after a paste.
-    const probe = 'function __phase5_step1_stale_shim_probe(h: Habit): string { return h.createdAt; }\n';
+    // Since Phase 5 Step 3, `Habit.createdAt` is a real, required field: isScheduledOpportunity/
+    // scheduledOpportunitiesUpTo (now in the generated closure) dereference it directly. This test
+    // demonstrates the guard would still catch the gap if that shim ever regressed -- a test-only,
+    // in-memory mutation that removes `createdAt` from the shim, mirroring how it read before Step
+    // 3 widened it. Never written back to the repository; the checked-in file is untouched.
+    const CURRENT_HABIT_SHIM = 'type Habit = { id: string; type: string; targetCount?: number; createdAt: string };';
+    // Sanity check on the fixture itself: if this ever stops matching, the real shim's shape
+    // changed and the mutation below would silently do nothing rather than remove a field.
+    expect(source).toContain(CURRENT_HABIT_SHIM);
 
-    const output = typeCheckSource(buildCheckableSource(source, probe));
+    const STALE_HABIT_SHIM = 'type Habit = { id: string; type: string; targetCount?: number };';
+    const withStaleShim = source.replace(CURRENT_HABIT_SHIM, STALE_HABIT_SHIM);
+    expect(withStaleShim).toContain(STALE_HABIT_SHIM);
+    expect(withStaleShim).not.toContain(CURRENT_HABIT_SHIM);
+
+    const output = typeCheckSource(buildCheckableSource(withStaleShim));
     expect(output).toMatch(/error TS2339: Property 'createdAt' does not exist on type 'Habit'/);
+  });
+
+  // Distinguishes two shim-gap classes the guard covers differently (docs/phase-5-plan.md section
+  // 10): existing-converter completeness (above -- toDomainHabit already exists and already
+  // constructs a Habit, so an omitted required field is a concrete type error) versus converter
+  // existence (below -- nothing here constructs a HabitSchedulePeriod/LapseReasonEntry from a row
+  // yet, so there is nothing for the guard to type-check against their total absence).
+  it('does not, and cannot, detect a caller-side mapper that was never written (the uncovered class)', () => {
+    const source = fs.readFileSync(TARGETS[0], 'utf8'); // ai-insights
+    expect(source).toContain('type HabitSchedulePeriod');
+    expect(source).toContain('type LapseReasonEntry');
+    // No mapper exists yet from HabitSchedulePeriodRow/LapseReasonRow to the domain shapes, and no
+    // DB read fetches either table in this file -- both are Step 4 work. Checked as an actual
+    // Supabase call, not a bare substring match, since the shim comments above name both tables in
+    // prose.
+    expect(source).not.toMatch(/\.from\(['"]habit_schedule_periods['"]\)/);
+    expect(source).not.toMatch(/\.from\(['"]lapse_reasons['"]\)/);
+
+    const output = typeCheckSource(buildCheckableSource(source));
+    expect(output).toBe(''); // clean -- the guard has nothing to flag, which is the point being proven
   });
 });

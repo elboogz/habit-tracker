@@ -21,20 +21,112 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const DOMAIN_DIR = path.join(ROOT, 'lib', 'domain');
 
-// Only these named declarations are inlined today -- the specific functions the two Edge
-// Functions currently hand-duplicate. lib/domain/habit-stats.ts also exports challengeProgress
-// and friends, which depend on Challenge/HabitSchedulePeriod/isScheduledOpportunity that have no
-// equivalent in either Edge Function -- deliberately excluded, not just "everything in the file".
-// Phase 5's AI coach rewrite will extend this list when it needs the newer recovery/momentum
-// functions server-side; each addition goes through the same import-safety check below before it
-// can be generated.
-// Kept to exactly the functions each Edge Function actually calls plus their own direct
-// dependencies (not "everything available") -- e.g. weekdayOf/localDayKeyOf/daysBetween/
-// isDoneToday/longestStreak exist in the same source files but aren't pulled in here, since
-// neither Edge Function uses them today and including them would be unused, speculative code.
+// Phase 5, Step 3 (docs/phase-5-plan.md section 6.1): extends the pre-Phase-5 whitelist with the
+// transitive closure required by buildCoachFacts, hasGroundedInsight and validateCoachOutput,
+// hand-enumerated (including private helpers) by an import-aware walk from those three roots --
+// re-derived directly from the current source, not copied from any prior estimate. The pre-Phase-5
+// entries below are kept exactly as they were: both Edge Functions' existing nudge/reflection
+// prompts still call calendarStreakForHabit/calendarConsistency/etc. directly (no call site has
+// been switched yet -- see the Step 3 boundary below), so removing them would silently break code
+// that is still live. `momentum()` is deliberately excluded: it has zero non-test callers and does
+// not appear in the computed closure -- see docs/phase-5-plan.md section 6.1, "momentum() stays
+// excluded". `computeConfirmedState` (the generic, non-chain-aware hysteresis helper) is also
+// excluded: `confirmedStateAt` no longer calls it (see CLAUDE.md's Momentum contracts section), so
+// it is not part of the real closure despite living in the same file.
+// Deliberately does not switch any call site -- the generated code becomes available here, nothing
+// calls it yet. Each addition goes through the same import-safety check below before it can be
+// generated.
 const SOURCES = [
-  { file: 'day-key.ts', names: ['dayKey', 'addDays'] },
-  { file: 'habit-stats.ts', names: ['logsForHabitOnDay', 'countForDay', 'isDoneOnDay', 'calendarStreakForHabit', 'DayStatus', 'recentHistory', 'calendarConsistency'] },
+  { file: 'day-key.ts', names: ['dayKey', 'addDays', 'parseDayKeyParts', 'weekdayOf', 'localDayKeyOf', 'daysBetween'] },
+  { file: 'schedule.ts', names: ['scheduleForDate', 'isScheduledOpportunity', 'scheduledOpportunitiesUpTo', 'scheduledOpportunitiesInWindow'] },
+  { file: 'config.ts', names: ['RECOVERY_CONFIG', 'MOMENTUM_CONFIG', 'HABIT_HEALTH_CONFIG', 'CoachFactsKind', 'CONSISTENCY_WINDOW_DAYS_BY_KIND'] },
+  {
+    file: 'habit-stats.ts',
+    names: [
+      'logsForHabitOnDay',
+      'countForDay',
+      'isDoneOnDay',
+      'totalCompletions',
+      'calendarStreakForHabit',
+      'DayStatus',
+      'recentHistory',
+      'consistency',
+      'calendarConsistency',
+    ],
+  },
+  {
+    file: 'recovery.ts',
+    names: [
+      'OpportunityRecord',
+      'opportunityRecords',
+      'RecoverableLapseInstance',
+      'RecoveryEvent',
+      'ClosedLapse',
+      'RecoveryRateResult',
+      'RecoveryRateSummary',
+      'recoverableLapseInstances',
+      'recoveryEvents',
+      'closedLapses',
+      'averageRecoveryTime',
+      'summarizeRate',
+      'recoveryRate',
+    ],
+  },
+  {
+    file: 'momentum.ts',
+    names: [
+      'MomentumStateKey',
+      'lastN',
+      'isPending',
+      'resolvedView',
+      'completionRate',
+      'meetsRateWindow',
+      'meetsBuilding',
+      'isCurrentlyQuiet',
+      'isRecentShortRecoveryFromLapses',
+      'isRebuildingFromLapses',
+      'classifyFromRecords',
+      'buildCompletionIndex',
+      'confirmedStateAt',
+      'EVIDENCE_CHAIN',
+      'EVIDENCE_RANK',
+      'rule2EvidenceRank',
+      'computeConfirmedMomentumState',
+    ],
+  },
+  { file: 'habit-health.ts', names: ['HabitHealthVerdict', 'blockCompletionRate', 'habitHealthVerdict'] },
+  {
+    file: 'coach-facts.ts',
+    names: [
+      'LapseReasonDistributionKey',
+      'LAPSE_REASON_DISTRIBUTION_KEYS',
+      'HabitCoachFacts',
+      'CoachFacts',
+      'RATE_FIELD_NAMES',
+      'lapseReasonDistribution',
+      'buildHabitCoachFacts',
+      'buildCoachFacts',
+      'QUALIFYING_MOMENTUM_STATES',
+      'hasGroundedInsight',
+    ],
+  },
+  {
+    file: 'coach-validation.ts',
+    names: [
+      'RATE_FIELD_NAME_SET',
+      'ValidationResult',
+      'ORDINAL_RE',
+      'ISO_DATE_RE',
+      'MONTH_NAMES',
+      'MONTH_DAY_RE',
+      'DAY_MONTH_RE',
+      'NUMERAL_RE',
+      'maskExemptSpans',
+      'collectFactNumbers',
+      'isGrounded',
+      'validateCoachOutput',
+    ],
+  },
 ];
 
 const TARGET_FILES = [
