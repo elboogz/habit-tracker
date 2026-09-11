@@ -79,7 +79,7 @@ function maskExemptSpans(text: string): string {
  * `coach-facts.ts` without this module changing, and a compile error (not a silent behavioural
  * change) if `RATE_FIELD_NAMES` itself ever drifts from the type it's declared against.
  */
-function collectFactNumbers(facts: CoachFacts): { plain: Set<number>; pct: Set<number> } {
+export function collectFactNumbers(facts: CoachFacts): { plain: Set<number>; pct: Set<number> } {
   const plain = new Set<number>();
   const pct = new Set<number>();
 

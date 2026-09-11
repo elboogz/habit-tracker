@@ -13,6 +13,13 @@ export type Insight = { content: string; createdAt: string };
 export async function getInsight(kind: InsightKind): Promise<Insight | null> {
   try {
     const { data, error } = await supabase.functions.invoke('ai-insights', { body: { kind } });
+    // This truthiness check (not a nullish check) is load-bearing beyond the original "no
+    // response at all" case: Phase 5 Step 5's validator-rejection failure sentinel is an
+    // ai_insights row with content: '', and this is the only place that turns it into null
+    // before it would otherwise reach the Progress screen's `?? 'No tip yet.'` render guard
+    // (docs/phase-5-plan.md section 6.6, "Sentinel shape: the render path traced"; pinned by
+    // lib/ai-coach.test.ts). Narrowing this to `data?.content == null` would let an empty-string
+    // sentinel through unchanged and silently break that guard.
     if (error || !data?.content) return null;
     return { content: data.content, createdAt: data.createdAt };
   } catch {

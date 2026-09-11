@@ -91,3 +91,34 @@ export const CONSISTENCY_WINDOW_DAYS_BY_KIND: Record<CoachFactsKind, number> = {
   weekly: 7,
   monthly: 30,
 } as const;
+
+/**
+ * Phase 5, Step 5 Part 1 (docs/phase-5-plan.md section 6.6, "Sentinel TTL, proposed explicitly").
+ * Mirrors the successful-content freshness windows the two Edge Functions already use for their
+ * own `ai_insights` cache check (`ai-insights/index.ts`'s `KIND_CONFIG.freshnessHours`: nudge 20,
+ * weekly 24*7, monthly 24*30). Recorded here, not only there, so `FAILURE_SENTINEL_TTL_HOURS`
+ * below has something concrete to be checked against (`FAILURE_SENTINEL_TTL_HOURS[kind] <
+ * COACH_CONTENT_FRESHNESS_HOURS_BY_KIND[kind]`, per kind, is a real, tested invariant, not only a
+ * comment). Part 3's wiring should read the Edge Functions' `KIND_CONFIG.freshnessHours` from
+ * here rather than keep two hand-maintained copies in sync by eye -- not done now, since Part 1
+ * does not touch either Edge Function file.
+ */
+export const COACH_CONTENT_FRESHNESS_HOURS_BY_KIND: Record<CoachFactsKind, number> = {
+  nudge: 20,
+  weekly: 24 * 7,
+  monthly: 24 * 30,
+} as const;
+
+/**
+ * Already ruled at docs/phase-5-plan.md section 6.6, "Sentinel TTL, proposed explicitly" -- not a
+ * fresh Part 1 proposal. A validator-rejection failure sentinel is retry backoff, not content
+ * caching, so it is deliberately not the successful-content freshness window above: inheriting it
+ * would suppress retry for 30 days on monthly content. Each value is checked directly against
+ * `COACH_CONTENT_FRESHNESS_HOURS_BY_KIND` (see that constant's own tests) rather than only
+ * asserted to be smaller in prose.
+ */
+export const FAILURE_SENTINEL_TTL_HOURS: Record<CoachFactsKind, number> = {
+  nudge: 3,
+  weekly: 24,
+  monthly: 24,
+} as const;
