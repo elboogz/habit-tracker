@@ -1372,7 +1372,7 @@ function validateCoachOutput(text: string, facts: CoachFacts): ValidationResult 
 //   file  -- fingerprints this whole file with only this line neutralized, so comparing it against
 //            the repository answers "is what's deployed current?"
 // See docs/phase-5-precondition-review.md, B6.
-const SOURCE_STAMP = { block: 'c6899ac443ff', file: '4ef97544a211' };
+const SOURCE_STAMP = { block: 'c6899ac443ff', file: '36e8708f7004' };
 
 // Row shapes as returned by Supabase (snake_case, matching the Postgres columns directly) --
 // adapted below to the shared domain layer's camelCase shape, mirroring the same job
@@ -1390,12 +1390,19 @@ type HabitLog = { habitId: string; date: string; count: number; reduced?: boolea
 // Phase 5, Step 3 (docs/phase-5-plan.md section 6.1 / section 10 register): these four mirror
 // lib/habit-types.ts structurally (HabitSchedulePeriod/ScheduleDays/LapseReasonKey/LapseReasonEntry)
 // and their Postgres row counterparts, needed because the generated closure below references them
-// as parameter/field types (schedule.ts, recovery.ts, coach-facts.ts). No caller here constructs a
-// value of any of the four yet -- there is no habit_schedule_periods or lapse_reasons DB read in
-// this file, and no mapper from the row shapes to the domain shapes. That is Step 4 work, tracked
-// as the register's "uncovered class: converter existence" -- the Step 1 guard can confirm these
-// shapes are internally consistent with how the generated code reads them, but it cannot detect a
-// caller-side mapper's total absence, since nothing here yet needs one to type-check.
+// as parameter/field types (schedule.ts, recovery.ts, coach-facts.ts).
+//
+// Step 4 Part 1 (docs/phase-5-plan.md section 6.2): toDomainSchedulePeriod and
+// toDomainLapseReason below are the caller-side mappers for HabitSchedulePeriodRow ->
+// HabitSchedulePeriod and LapseReasonRow -> LapseReasonEntry, mirroring lib/supabase-sync.ts's
+// rowToPeriod/rowToLapseReason. The unrecognised-lapse-reason question (docs/phase-5-plan.md,
+// section 10) is resolved: `reason` is enforced by a validated Postgres CHECK constraint
+// (lapse_reasons_reason_check) to NULL or one of the five LapseReasonKey values, so
+// toDomainLapseReason's `as LapseReasonKey | null` cast is unchecked but currently safe -- see
+// that section for the full evidence and the residual dependency on the constraint remaining
+// intact. Neither mapper has a caller yet -- there is still no habit_schedule_periods or
+// lapse_reasons DB read in this file, so nothing here constructs a HabitSchedulePeriod or
+// LapseReasonEntry from a real row outside the test suite. That remains Part 2 work.
 type ScheduleDays = 'daily' | number[];
 type HabitSchedulePeriod = { id: string; habitId: string; effectiveFrom: string; days: ScheduleDays; paused: boolean; createdAt: string };
 type LapseReasonKey = 'too_busy' | 'forgot' | 'low_energy' | 'not_feeling_it' | 'something_else';
@@ -1409,6 +1416,43 @@ function toDomainHabit(row: HabitRow): Habit {
 
 function toDomainLogs(rows: LogRow[]): HabitLog[] {
   return rows.map((row) => ({ habitId: row.habit_id, date: row.date, count: row.count, reduced: row.reduced ?? undefined }));
+}
+
+/**
+ * Row-to-domain conversion for HabitSchedulePeriod, mirroring lib/supabase-sync.ts's rowToPeriod
+ * (Phase 4) for the fields HabitSchedulePeriod itself declares -- id/updatedAt beyond what the
+ * minimal shim above carries are not part of this mapper's output, since nothing in the generated
+ * closure constructs or reads them. `days_of_week: null` maps to `'daily'`; a non-null array is
+ * passed through unchanged -- the same two rules rowToPeriod already encodes.
+ */
+function toDomainSchedulePeriod(row: HabitSchedulePeriodRow): HabitSchedulePeriod {
+  return {
+    id: row.id,
+    habitId: row.habit_id,
+    effectiveFrom: row.effective_from,
+    days: row.days_of_week ?? 'daily',
+    paused: row.paused,
+    createdAt: row.created_at,
+  };
+}
+
+/**
+ * Row-to-domain conversion for LapseReasonEntry, mirroring lib/supabase-sync.ts's
+ * rowToLapseReason (Phase 4) for the fields LapseReasonEntry itself declares --
+ * id/missedOpportunityDate/note/skipped/updatedAt beyond what the minimal shim above carries are
+ * not part of this mapper's output, since nothing in the generated closure constructs or reads
+ * them. The `as LapseReasonKey | null` cast is unchecked but currently safe: `reason` is enforced
+ * by a validated Postgres CHECK constraint (lapse_reasons_reason_check) to NULL or one of the
+ * five LapseReasonKey values (docs/phase-5-plan.md, section 10) -- if that constraint is ever
+ * dropped, loosened, or replaced, this cast (and rowToLapseReason's identical one) becomes
+ * unsound.
+ */
+function toDomainLapseReason(row: LapseReasonRow): LapseReasonEntry {
+  return {
+    habitId: row.habit_id,
+    createdAt: row.created_at,
+    reason: row.reason as LapseReasonKey | null,
+  };
 }
 
 function localDateKey(timezone: string, date: Date): string {
