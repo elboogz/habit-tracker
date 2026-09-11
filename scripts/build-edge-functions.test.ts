@@ -246,24 +246,35 @@ declare const createClient: any;
 
   it('catches a missing-dependency failure: a symbol referenced elsewhere in the file but not present in what the whitelist extracted (the B1 class)', () => {
     const source = fs.readFileSync(TARGETS[0], 'utf8'); // ai-insights
-    const CALENDAR_CONSISTENCY_DECLARATION = `function calendarConsistency(habit: Habit, logs: HabitLog[], days: number, asOfDate: string = dayKey()): number {
-  const history = recentHistory(habit, logs, days, asOfDate);
-  const doneCount = history.filter((entry) => entry.done).length;
-  return history.length === 0 ? 0 : doneCount / history.length;
+    // Targets consistency(), not calendarConsistency() -- Step 4 Part 2's call-site switch means
+    // calendarConsistency is no longer called anywhere in this file's hand-written code, so
+    // deleting its declaration would no longer leave a dangling reference for this test to catch.
+    // consistency() is the function the prompt-building call site actually calls now.
+    const CONSISTENCY_DECLARATION = `function consistency(
+  habit: Habit,
+  logs: HabitLog[],
+  days: number,
+  schedulePeriods: HabitSchedulePeriod[],
+  asOfDate: string = dayKey(),
+): number | null {
+  const opportunities = scheduledOpportunitiesInWindow(habit, schedulePeriods, days, asOfDate);
+  if (opportunities.length === 0) return null;
+  const doneCount = opportunities.filter((date) => isDoneOnDay(habit, logs, date)).length;
+  return doneCount / opportunities.length;
 }`;
     // Sanity check on the fixture itself: if this ever stops matching, the real function's shape
     // changed and the mutation below would silently do nothing rather than remove a declaration.
-    expect(source).toContain(CALENDAR_CONSISTENCY_DECLARATION);
+    expect(source).toContain(CONSISTENCY_DECLARATION);
 
     // Delete the declaration -- still called from the handler below it -- leaving exactly the
     // dangling reference scripts/build-edge-functions.js's extractDeclarations would produce if a
     // future whitelist entry needed a helper it forgot to also name.
-    const withoutCalendarConsistency = source.replace(CALENDAR_CONSISTENCY_DECLARATION, '');
-    expect(withoutCalendarConsistency).not.toContain('function calendarConsistency(');
-    expect(withoutCalendarConsistency).toContain('calendarConsistency('); // the call site remains
+    const withoutConsistency = source.replace(CONSISTENCY_DECLARATION, '');
+    expect(withoutConsistency).not.toContain('function consistency(');
+    expect(withoutConsistency).toContain('consistency('); // the call site remains
 
-    const output = typeCheckSource(buildCheckableSource(withoutCalendarConsistency));
-    expect(output).toMatch(/error TS2304: Cannot find name 'calendarConsistency'/);
+    const output = typeCheckSource(buildCheckableSource(withoutConsistency));
+    expect(output).toMatch(/error TS2304: Cannot find name 'consistency'/);
   });
 
   it("catches a stale-shim failure: a hand-maintained row/type shim missing a field the generated code uses (the stale-shim class)", () => {
@@ -287,23 +298,13 @@ declare const createClient: any;
     expect(output).toMatch(/error TS2339: Property 'createdAt' does not exist on type 'Habit'/);
   });
 
-  // Distinguishes two shim-gap classes the guard covers differently (docs/phase-5-plan.md section
-  // 10): existing-converter completeness (above -- toDomainHabit already exists and already
-  // constructs a Habit, so an omitted required field is a concrete type error) versus converter
-  // existence (below -- nothing here constructs a HabitSchedulePeriod/LapseReasonEntry from a row
-  // yet, so there is nothing for the guard to type-check against their total absence).
-  it('does not, and cannot, detect a caller-side mapper that was never written (the uncovered class)', () => {
-    const source = fs.readFileSync(TARGETS[0], 'utf8'); // ai-insights
-    expect(source).toContain('type HabitSchedulePeriod');
-    expect(source).toContain('type LapseReasonEntry');
-    // No mapper exists yet from HabitSchedulePeriodRow/LapseReasonRow to the domain shapes, and no
-    // DB read fetches either table in this file -- both are Step 4 work. Checked as an actual
-    // Supabase call, not a bare substring match, since the shim comments above name both tables in
-    // prose.
-    expect(source).not.toMatch(/\.from\(['"]habit_schedule_periods['"]\)/);
-    expect(source).not.toMatch(/\.from\(['"]lapse_reasons['"]\)/);
-
-    const output = typeCheckSource(buildCheckableSource(source));
-    expect(output).toBe(''); // clean -- the guard has nothing to flag, which is the point being proven
-  });
+  // The Step 4 Part 1-era "uncovered class" test (proving the guard has nothing to flag when
+  // neither habit_schedule_periods nor lapse_reasons is read and no mapper is called) is retired
+  // here, not left to fail: Step 4 Part 2 is precisely the step that closes that gap by design --
+  // both tables are now read in this file (habit_schedule_periods in the main prompt-building
+  // path, lapse_reasons in the Step 4 Part 2 diagnostic branch) and both mappers now have real
+  // callers. The historical finding itself (existing-converter completeness vs. converter
+  // existence, and why the guard could not have caught the omission) remains recorded in
+  // docs/phase-5-plan.md section 10's register entry, updated for the Part 2 close rather than
+  // duplicated here.
 });

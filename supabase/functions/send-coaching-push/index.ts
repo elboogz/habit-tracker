@@ -1372,7 +1372,7 @@ function validateCoachOutput(text: string, facts: CoachFacts): ValidationResult 
 //   file  -- fingerprints this whole file with only this line neutralized, so comparing it against
 //            the repository answers "is what's deployed current?"
 // See docs/phase-5-precondition-review.md, B6.
-const SOURCE_STAMP = { block: 'c6899ac443ff', file: '36e8708f7004' };
+const SOURCE_STAMP = { block: 'c6899ac443ff', file: '1b4b1ed4722c' };
 
 // Row shapes as returned by Supabase (snake_case, matching the Postgres columns directly) --
 // adapted below to the shared domain layer's camelCase shape, mirroring the same job
@@ -1486,22 +1486,32 @@ type Recipient = {
 
 // deno-lint-ignore no-explicit-any
 async function generateNudge(supabase: any, anthropic: Anthropic, userId: string, today: string): Promise<string | null> {
-  const windowStart = addDays(today, -NUDGE_WINDOW_DAYS);
-
-  const [{ data: habits }, { data: logs }] = await Promise.all([
+  // No fixed lower bound on habit_logs (docs/phase-5-plan.md section 8, ruled 2026-09-11) -- see
+  // ai-insights/index.ts's equivalent comment for the full reasoning and measured evidence. This
+  // function uses the service-role key, so unlike ai-insights there is no RLS backstop: every
+  // read below stays explicitly scoped to `.eq('user_id', userId)`.
+  const [{ data: habits }, { data: logs }, { data: schedulePeriodRows }] = await Promise.all([
     supabase.from('habits').select('id, name, emoji, type, target_count, created_at').eq('user_id', userId).is('deleted_at', null),
-    supabase.from('habit_logs').select('habit_id, date, count, reduced').eq('user_id', userId).gte('date', windowStart),
+    supabase.from('habit_logs').select('habit_id, date, count, reduced').eq('user_id', userId),
+    supabase.from('habit_schedule_periods').select('id, habit_id, effective_from, days_of_week, paused, created_at').eq('user_id', userId),
   ]);
 
   if (!habits || habits.length === 0) return null;
 
-  const summary = (habits as HabitRow[]).map((habit) => ({
-    name: habit.name,
-    emoji: habit.emoji,
-    consistencyPct: Math.round(
-      calendarConsistency(toDomainHabit(habit), toDomainLogs((logs ?? []) as LogRow[]), NUDGE_WINDOW_DAYS, today) * 100,
-    ),
-  }));
+  const schedulePeriods = ((schedulePeriodRows ?? []) as HabitSchedulePeriodRow[]).map(toDomainSchedulePeriod);
+
+  // Schedule-aware consistency() replaces calendarConsistency() (Step 4 Part 2 call-site switch);
+  // prompt wording unchanged (Step 5 work). consistencyPct is omitted, not defaulted to 0, when
+  // consistency() returns null (no Scheduled Opportunity in the window) -- ruled 2026-09-11, see
+  // ai-insights/index.ts's equivalent comment for the full reasoning.
+  const summary = (habits as HabitRow[]).map((habit) => {
+    const consistencyRate = consistency(toDomainHabit(habit), toDomainLogs((logs ?? []) as LogRow[]), NUDGE_WINDOW_DAYS, schedulePeriods, today);
+    return {
+      name: habit.name,
+      emoji: habit.emoji,
+      ...(consistencyRate !== null ? { consistencyPct: Math.round(consistencyRate * 100) } : {}),
+    };
+  });
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',

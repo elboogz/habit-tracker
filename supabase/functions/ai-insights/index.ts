@@ -1386,7 +1386,7 @@ function validateCoachOutput(text: string, facts: CoachFacts): ValidationResult 
 //   file  -- fingerprints this whole file with only this line neutralized, so comparing it against
 //            the repository answers "is what's deployed current?"
 // See docs/phase-5-precondition-review.md, B6.
-const SOURCE_STAMP = { block: 'c6899ac443ff', file: '0f3a54d004fb' };
+const SOURCE_STAMP = { block: 'c6899ac443ff', file: '791153365fc3' };
 
 // The prompt asks Claude to avoid em dashes and emoji in the body, but it doesn't always comply.
 // This deterministically enforces both: dashes are replaced with commas/sentence breaks, and any
@@ -1503,7 +1503,7 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    const { kind: kindRaw } = body as Record<string, unknown>;
+    const { kind: kindRaw, diagnostic } = body as Record<string, unknown>;
     if (typeof kindRaw !== 'string' || !(kindRaw in KIND_CONFIG)) {
       return new Response(JSON.stringify({ error: 'Invalid kind' }), {
         status: 400,
@@ -1535,6 +1535,41 @@ Deno.serve(async (req) => {
       });
     }
     const userId = userData.user.id;
+    const today = dayKey(new Date());
+
+    // Phase 5, Step 4 Part 2 (docs/phase-5-plan.md section 6.2): an authenticated POST-body
+    // diagnostic flag, not a new GET route (method ruled 2026-09-11) -- reuses this exact
+    // authentication path unchanged, with no new routing mechanic. Returns before the freshness
+    // check, before the rate-limit count, before Anthropic, and before any ai_insights write, so
+    // it performs its own reads rather than the main path's later ones (RLS already scopes every
+    // read here to this user). Reports the real CoachFacts -- habit ids only, never names;
+    // CoachFacts carries no name field at all -- and the real hasGroundedInsight result. It does
+    // not report which of §6.7's three branches (grounded / deterministic fallback / validator-
+    // suppressed) would fire: neither fallback nor the validator is wired into generation until
+    // Step 5, so there is no real branch to observe yet, and none is fabricated here. Removable in
+    // one edit (this whole block), with the removal visible in this file's own SOURCE_STAMP.
+    if (diagnostic === true) {
+      const [{ data: diagHabits }, { data: diagLogs }, { data: diagPeriods }, { data: diagLapses }] = await Promise.all([
+        supabase.from('habits').select('id, name, emoji, type, target_count, created_at').is('deleted_at', null),
+        supabase.from('habit_logs').select('habit_id, date, count, reduced'),
+        supabase.from('habit_schedule_periods').select('id, habit_id, effective_from, days_of_week, paused, created_at'),
+        supabase.from('lapse_reasons').select('habit_id, created_at, reason'),
+      ]);
+
+      const diagFacts = buildCoachFacts(
+        ((diagHabits ?? []) as HabitRow[]).map(toDomainHabit),
+        toDomainLogs((diagLogs ?? []) as LogRow[]),
+        ((diagPeriods ?? []) as HabitSchedulePeriodRow[]).map(toDomainSchedulePeriod),
+        ((diagLapses ?? []) as LapseReasonRow[]).map(toDomainLapseReason),
+        today,
+        kind,
+      );
+
+      return new Response(
+        JSON.stringify({ facts: diagFacts, hasGroundedInsight: hasGroundedInsight(diagFacts), stamp: SOURCE_STAMP }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
 
     // 1. Reuse a fresh-enough existing insight rather than calling Claude again.
     const since = new Date(Date.now() - config.freshnessHours * 60 * 60 * 1000).toISOString();
@@ -1570,13 +1605,20 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 4. Pull the relevant window of habits/logs (RLS already scopes these to this user).
-    const today = dayKey(new Date());
+    // 4. Pull habits and full log history (RLS already scopes these to this user). No fixed
+    // lower bound on habit_logs (docs/phase-5-plan.md section 8, ruled 2026-09-11): confirmed
+    // Momentum, Total Completions, Recovery Count, rolling Recovery Rate and Average Recovery
+    // Time all require full per-habit history under the current domain algorithms, and measured
+    // live volume (18/5/3 habits per user, 245 logs for the heaviest observed user, ~165 bytes/row)
+    // showed no performance reason to bound it -- this call site doesn't compute any of those
+    // fields yet (no prompt rewrite), but the read itself is sized correctly now rather than
+    // needing to change again in Step 5.
     const windowStart = addDays(today, -config.windowDays);
 
-    const [{ data: habits }, { data: logs }] = await Promise.all([
+    const [{ data: habits }, { data: logs }, { data: schedulePeriodRows }] = await Promise.all([
       supabase.from('habits').select('id, name, emoji, type, target_count, created_at').is('deleted_at', null),
-      supabase.from('habit_logs').select('habit_id, date, count, reduced').gte('date', windowStart),
+      supabase.from('habit_logs').select('habit_id, date, count, reduced'),
+      supabase.from('habit_schedule_periods').select('id, habit_id, effective_from, days_of_week, paused, created_at'),
     ]);
 
     if (!habits || habits.length === 0) {
@@ -1589,12 +1631,26 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 5. Summarize stats per habit for the prompt.
-    const summary = habits.map((habit: HabitRow) => ({
-      name: habit.name,
-      emoji: habit.emoji,
-      consistencyPct: Math.round(calendarConsistency(toDomainHabit(habit), toDomainLogs(logs ?? []), config.windowDays) * 100),
-    }));
+    const schedulePeriods = ((schedulePeriodRows ?? []) as HabitSchedulePeriodRow[]).map(toDomainSchedulePeriod);
+
+    // 5. Summarize stats per habit for the prompt. Schedule-aware consistency() replaces
+    // calendarConsistency() now that habit_schedule_periods is actually read (Step 4 Part 2
+    // call-site switch) -- prompt wording is unchanged (Step 5 work). consistency() can return
+    // null (no Scheduled Opportunity in the window, e.g. a habit paused throughout it) --
+    // deliberately, per its own doc comment: "not yet asked" is a different claim from "asked and
+    // missed every time." consistencyPct is therefore omitted from that habit's entry entirely
+    // (ruled 2026-09-11, docs/phase-5-plan.md section 6.2), matching how buildCoachFacts already
+    // handles the identical case -- not defaulted to 0, which would misrepresent an unmeasured
+    // habit as a 0% one. This intentionally changes summary's previously always-numeric shape;
+    // no prompt text is added to account for the omission, since prompt rewrites are Step 5 work.
+    const summary = habits.map((habit: HabitRow) => {
+      const consistencyRate = consistency(toDomainHabit(habit), toDomainLogs(logs ?? []), config.windowDays, schedulePeriods, today);
+      return {
+        name: habit.name,
+        emoji: habit.emoji,
+        ...(consistencyRate !== null ? { consistencyPct: Math.round(consistencyRate * 100) } : {}),
+      };
+    });
 
     const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY') });
     const response = await anthropic.messages.create({
