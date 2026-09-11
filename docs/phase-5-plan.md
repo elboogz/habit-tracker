@@ -530,9 +530,21 @@ Extend the pattern already proven side-effect-free: `ai-insights` gains one auth
 
 **What it verifies, and what it does not. [Ruled]** This mechanism verifies **transport and input correctness** — that the DB reads return what is expected, that `created_at` is present and correct, that schedule periods are being read and applied, and that the call-site switch actually took effect. It **does not verify domain arithmetic.** Because expected values are established by reusing the authoritative `lib/domain/` implementation on both sides of the comparison, a domain bug produces identically wrong values on each side and the comparison passes.
 
+**Step 4 real-data soak result, 2026-09-11 [Passed].** The diagnostic was invoked against the real account (five habits, real schedule/lapse/log history) via the authenticated POST-body flag, confirming all three of Step 4's behavioural/data-boundary changes against live data, not synthetic fixtures:
+
+- **Full-history logs.** `totalCompletions` for each of the five habits matched the live database's row counts habit by habit, corroborated independently by the Progress screen's own display of the same figures.
+- **Schedule-aware opportunities.** The account's one Mon/Wed/Fri habit returned 6 Scheduled Opportunities in the window against 14 for the daily habits — matching its real `days_of_week` value, not a daily-default fallback.
+- **`lapse_reasons` read and mapper, end to end through the real app write path.** A Reflect action with reason `'forgot'` on habit `2147c728`, performed through the actual Recovery Card UI (not a developer tool, not a direct write), produced `lapseReasonCounts.forgot === 1` for that habit in the next diagnostic call. `reason`'s non-null value survived `toDomainLapseReason`'s `as LapseReasonKey | null` cast intact.
+- **Isolation, confirmed rather than only traced.** Comparing the pre-write and post-write diagnostic responses: every other returned `CoachFacts` field, across all five habits, was byte-for-byte unchanged — matching exactly what tracing `buildHabitCoachFacts`'s argument usage predicted (`lapseReasons` feeds only `lapseReasonCounts`).
+- **`hasGroundedInsight` remained `false`**, correctly matching the returned Momentum/Habit Health states across all five habits (none in a qualifying Momentum state, none `positive_recent_comparison`).
+
+**One coverage limitation remains, named rather than closed by this soak.** `days_of_week: null` → `days: 'daily'` was not exercised by this pass — none of the account's real `habit_schedule_periods` rows happen to have a null `days_of_week` at this time. This is not a gap in the mapper's verification: the case remains pinned by the targeted Part 1 unit/discrimination tests (`scripts/edge-function-mappers.test.ts`), including the demonstrated failure of an incorrect `[]` implementation against the real correctness assertion (`Expected: "daily" / Received: []`). No additional production data was manufactured to exercise this case on real data, per instruction — it stays a test-covered, not a soak-covered, case.
+
 **Domain correctness remains owned by Step 2's unit tests.** Step 4's diagnostic must not be read, or reported, as full verification of the facts themselves. That division of labour is stated here so it is not assumed away later.
 
 `send-coaching-push` needs no equivalent: it computes the same facts from the same generated block, and its existing `GET` already proves it runs the same revision.
+
+**Step 4 closed in full, 2026-09-11.** Part 1 (caller-side mappers, closed at commit `b1bddb4`), Part 2 (reads, call-site switch, diagnostic; implementation and deployment both verified at commit `aebf2ba`, deployed block `c6899ac443ff`, deployed files `791153365fc3` / `1b4b1ed4722c`), and the real-data soak above are all complete. The one remaining unexercised case (`days_of_week: null`) is explicitly recorded rather than silently accepted, and remains covered by tests rather than by production evidence. Step 5 (prompts, validator, fallback, cutover) has not begun.
 
 ## 6.3 Step 5 — Prompts, validator, fallback, cutover (third paste)
 
