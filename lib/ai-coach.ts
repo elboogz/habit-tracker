@@ -2,7 +2,11 @@ import { supabase } from './supabase';
 
 export type InsightKind = 'nudge' | 'weekly' | 'monthly';
 
-export type Insight = { content: string; createdAt: string };
+// habitId (Phase 5, Step 5 Part 3b, Route C): present only for grounded coaching, identifying the
+// one habit the message discusses -- absent for the account-level deterministic fallback, which
+// is not about any specific habit. The client resolves it against its own already-loaded habits
+// array; it is never itself a habit name.
+export type Insight = { content: string; createdAt: string; habitId?: string };
 
 /**
  * Fetches an AI-generated coaching nudge or reflection. The Edge Function caches by
@@ -21,7 +25,7 @@ export async function getInsight(kind: InsightKind): Promise<Insight | null> {
     // lib/ai-coach.test.ts). Narrowing this to `data?.content == null` would let an empty-string
     // sentinel through unchanged and silently break that guard.
     if (error || !data?.content) return null;
-    return { content: data.content, createdAt: data.createdAt };
+    return { content: data.content, createdAt: data.createdAt, habitId: data.habitId };
   } catch {
     return null;
   }

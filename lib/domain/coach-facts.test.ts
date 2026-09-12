@@ -3,6 +3,7 @@ import { addDays } from './day-key';
 import {
   buildCoachFacts,
   hasGroundedInsight,
+  selectLeadingHabit,
   type CoachFacts,
   type HabitCoachFacts,
   type LapseReasonDistributionKey,
@@ -544,5 +545,120 @@ describe('hasGroundedInsight: message-level .some semantics', () => {
       fullHabitFacts({ habitId: 'h3', momentumState: 'quiet', habitHealth: 'no_positive_recent_comparison' }),
     );
     expect(hasGroundedInsight(f)).toBe(false);
+  });
+});
+
+// selectLeadingHabit -- Route C's deterministic cross-habit selection (docs/phase-5-plan.md
+// section 6.3's "Cross-habit selection precedence"). Built against the same fullHabitFacts/
+// coachFactsOf fixtures as hasGroundedInsight above, since it operates over the identical shape.
+
+describe('selectLeadingHabit: each tier in isolation', () => {
+  it('selects a recovering habit when it is the only qualifying one', () => {
+    const f = coachFactsOf(fullHabitFacts({ habitId: 'h1', momentumState: 'recovering' }));
+    expect(selectLeadingHabit(f)?.habitId).toBe('h1');
+  });
+
+  it('selects a rebuilding habit when it is the only qualifying one', () => {
+    const f = coachFactsOf(fullHabitFacts({ habitId: 'h1', momentumState: 'rebuilding' }));
+    expect(selectLeadingHabit(f)?.habitId).toBe('h1');
+  });
+
+  it('selects a building habit when it is the only qualifying one', () => {
+    const f = coachFactsOf(fullHabitFacts({ habitId: 'h1', momentumState: 'building' }));
+    expect(selectLeadingHabit(f)?.habitId).toBe('h1');
+  });
+
+  it('selects a thriving habit when it is the only qualifying one', () => {
+    const f = coachFactsOf(fullHabitFacts({ habitId: 'h1', momentumState: 'thriving' }));
+    expect(selectLeadingHabit(f)?.habitId).toBe('h1');
+  });
+
+  it('selects a Habit-Health-only qualifying habit (steady momentum, positive comparison)', () => {
+    const f = coachFactsOf(fullHabitFacts({ habitId: 'h1', momentumState: 'steady', habitHealth: 'positive_recent_comparison' }));
+    expect(selectLeadingHabit(f)?.habitId).toBe('h1');
+  });
+});
+
+describe('selectLeadingHabit: precedence when habits qualify through different tiers', () => {
+  it('a recovering/rebuilding habit beats a building/thriving habit', () => {
+    const f = coachFactsOf(
+      fullHabitFacts({ habitId: 'z-growth', momentumState: 'building' }),
+      fullHabitFacts({ habitId: 'a-recovery', momentumState: 'recovering' }),
+    );
+    expect(selectLeadingHabit(f)?.habitId).toBe('a-recovery');
+  });
+
+  it('a building/thriving habit beats a Habit-Health-only qualifying habit', () => {
+    const f = coachFactsOf(
+      fullHabitFacts({ habitId: 'z-growth', momentumState: 'thriving' }),
+      fullHabitFacts({ habitId: 'a-health', momentumState: 'steady', habitHealth: 'positive_recent_comparison' }),
+    );
+    expect(selectLeadingHabit(f)?.habitId).toBe('z-growth');
+  });
+
+  it('a recovering/rebuilding habit beats a Habit-Health-only qualifying habit even when alphabetically later', () => {
+    const f = coachFactsOf(
+      fullHabitFacts({ habitId: 'a-health', momentumState: 'steady', habitHealth: 'positive_recent_comparison' }),
+      fullHabitFacts({ habitId: 'z-recovery', momentumState: 'recovering' }),
+    );
+    expect(selectLeadingHabit(f)?.habitId).toBe('z-recovery');
+  });
+
+  it('a fully non-qualifying habit is never selected regardless of tie-break order', () => {
+    const f = coachFactsOf(
+      fullHabitFacts({ habitId: 'a-nonqualifying', momentumState: 'quiet', habitHealth: 'no_positive_recent_comparison' }),
+      fullHabitFacts({ habitId: 'z-building', momentumState: 'building' }),
+    );
+    expect(selectLeadingHabit(f)?.habitId).toBe('z-building');
+  });
+});
+
+describe('selectLeadingHabit: ascending lexical habitId tie-break', () => {
+  it('breaks a tie within the recovering/rebuilding tier by ascending habitId', () => {
+    const f = coachFactsOf(
+      fullHabitFacts({ habitId: 'zzz', momentumState: 'recovering' }),
+      fullHabitFacts({ habitId: 'aaa', momentumState: 'rebuilding' }),
+      fullHabitFacts({ habitId: 'mmm', momentumState: 'recovering' }),
+    );
+    expect(selectLeadingHabit(f)?.habitId).toBe('aaa');
+  });
+
+  it('breaks a tie within the building/thriving tier by ascending habitId', () => {
+    const f = coachFactsOf(
+      fullHabitFacts({ habitId: 'zzz', momentumState: 'building' }),
+      fullHabitFacts({ habitId: 'aaa', momentumState: 'thriving' }),
+    );
+    expect(selectLeadingHabit(f)?.habitId).toBe('aaa');
+  });
+
+  it('breaks a tie within the Habit-Health-only tier by ascending habitId', () => {
+    const f = coachFactsOf(
+      fullHabitFacts({ habitId: 'zzz', momentumState: 'quiet', habitHealth: 'positive_recent_comparison' }),
+      fullHabitFacts({ habitId: 'aaa', momentumState: 'steady', habitHealth: 'positive_recent_comparison' }),
+    );
+    expect(selectLeadingHabit(f)?.habitId).toBe('aaa');
+  });
+
+  it('does not mutate the order of facts.habits itself while breaking a tie', () => {
+    const habitA = fullHabitFacts({ habitId: 'zzz', momentumState: 'recovering' });
+    const habitB = fullHabitFacts({ habitId: 'aaa', momentumState: 'recovering' });
+    const f = coachFactsOf(habitA, habitB);
+    selectLeadingHabit(f);
+    expect(f.habits[0]).toBe(habitA);
+    expect(f.habits[1]).toBe(habitB);
+  });
+});
+
+describe('selectLeadingHabit: no qualifying habit', () => {
+  it('returns null when no habit qualifies under any tier', () => {
+    const f = coachFactsOf(
+      fullHabitFacts({ habitId: 'h1', momentumState: 'steady', habitHealth: 'no_positive_recent_comparison' }),
+      fullHabitFacts({ habitId: 'h2', momentumState: 'quiet', habitHealth: 'insufficient_evidence' }),
+    );
+    expect(selectLeadingHabit(f)).toBeNull();
+  });
+
+  it('returns null for an empty habits array', () => {
+    expect(selectLeadingHabit(coachFactsOf())).toBeNull();
   });
 });

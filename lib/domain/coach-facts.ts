@@ -249,3 +249,33 @@ export function hasGroundedInsight(facts: CoachFacts): boolean {
     (habit) => QUALIFYING_MOMENTUM_STATES.includes(habit.momentumState) || habit.habitHealth === 'positive_recent_comparison',
   );
 }
+
+/**
+ * Deterministic selection of the one habit a grounded coaching message discusses (Route C;
+ * docs/phase-5-plan.md section 6.3's "Cross-habit selection precedence" -- an extension of that
+ * section's emphasis-order ruling, not a restatement of it). Applies the approved tier order --
+ * `recovering`/`rebuilding`, then `building`/`thriving`, then Habit-Health-only
+ * `positive_recent_comparison` -- across every habit in `facts.habits`, and breaks a same-tier tie
+ * by ascending lexical `habitId` order: no seeding, no hashing, no behavioural metric, since this
+ * only needs to be deterministic for one request's snapshot of qualifying habits, not stable
+ * across time or varied for repetition the way the Step 5 Part 2 fallback message selection is.
+ *
+ * Returns `null` only when no habit qualifies under any tier -- which should never happen when
+ * this is called after confirming `hasGroundedInsight(facts)`, since that predicate is exactly
+ * "at least one habit satisfies one of these three tiers." The `null` case exists for type
+ * honesty, not as an expected branch a caller should rely on reaching.
+ */
+export function selectLeadingHabit(facts: CoachFacts): HabitCoachFacts | null {
+  const byAscendingHabitId = (a: HabitCoachFacts, b: HabitCoachFacts) => (a.habitId < b.habitId ? -1 : a.habitId > b.habitId ? 1 : 0);
+
+  const recoveryTier = facts.habits.filter((habit) => habit.momentumState === 'recovering' || habit.momentumState === 'rebuilding');
+  if (recoveryTier.length > 0) return recoveryTier.sort(byAscendingHabitId)[0];
+
+  const growthTier = facts.habits.filter((habit) => habit.momentumState === 'building' || habit.momentumState === 'thriving');
+  if (growthTier.length > 0) return growthTier.sort(byAscendingHabitId)[0];
+
+  const healthTier = facts.habits.filter((habit) => habit.habitHealth === 'positive_recent_comparison');
+  if (healthTier.length > 0) return healthTier.sort(byAscendingHabitId)[0];
+
+  return null;
+}

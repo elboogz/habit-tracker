@@ -33,7 +33,14 @@ import { RATE_FIELD_NAMES, type CoachFacts, type HabitCoachFacts } from './coach
 
 const RATE_FIELD_NAME_SET: ReadonlySet<string> = new Set(RATE_FIELD_NAMES);
 
-export type ValidationResult = { valid: true } | { valid: false; invalidNumerals: string[] };
+/**
+ * `matchedPhrases` (Phase 5, Step 5 Part 3b) is optional and never populated by
+ * `validateCoachOutput` itself -- it exists so a caller composing this numeric validator with a
+ * second, independent check (the lexical backstop, `lib/domain/coach-output-check.ts`) can report
+ * that second check's own failure without repurposing `invalidNumerals` to hold non-numeral
+ * strings. `invalidNumerals` remains honestly empty when a rejection has no numeric cause.
+ */
+export type ValidationResult = { valid: true } | { valid: false; invalidNumerals: string[]; matchedPhrases?: string[] };
 
 /** Digit-form ordinals: "1st", "21st", "3rd", "4th". Masked before the main numeral scan runs, regardless of whether they sit inside a date phrase or stand alone. */
 const ORDINAL_RE = /\b\d{1,2}(?:st|nd|rd|th)\b/gi;

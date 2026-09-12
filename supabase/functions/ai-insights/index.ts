@@ -28,23 +28,96 @@ const STYLE_RULES =
   'Write in plain, natural sentences. Never use em dashes (—); use commas or split into separate ' +
   'sentences instead. Do not include any emoji in the text. Plain text only, no markdown.';
 
-const SYSTEM_PROMPTS: Record<Kind, string> = {
-  nudge:
-    "You are an encouraging, perceptive habit-tracking coach. Given a user's recent habit data, write a short " +
-    '1-3 sentence personalized message: call out one specific strength (a habit the user has been consistent ' +
-    'with, citing its consistency %) and one area that could use attention, with a small, concrete suggestion. ' +
-    `Be warm and specific, not generic. ${STYLE_RULES}`,
-  weekly:
-    'You are an encouraging, perceptive habit-tracking coach writing a brief weekly reflection from a user’s ' +
-    'habit data. In 2-4 short sentences, name the habit they were most consistent with (with the %), one that ' +
-    'dropped off or needs attention, and one specific, actionable suggestion for the coming week. Be warm, ' +
-    `specific, and concise. ${STYLE_RULES}`,
-  monthly:
-    'You are an encouraging, perceptive habit-tracking coach writing a brief monthly reflection from a user’s ' +
-    'habit data. In 3-5 short sentences, summarize their strongest habit this month (with its consistency %), one ' +
-    'that needs more attention, any notable trend across the month, and one specific suggestion going forward. ' +
-    `Be warm, specific, and concise. ${STYLE_RULES}`,
-};
+const ROLE_INTRO =
+  "You are a supportive, perceptive habit-tracking coach. You are given a JSON description of one user's habit, already computed by the app, and you write natural, concise coaching text from it.";
+
+// Phase 5, Step 5 (docs/phase-5-plan.md sections 6.3-6.4): the approved 12-rule shared rules
+// block. Identical across all three kinds by design (the "Prompt provenance" ruling: one shared
+// constant, not three separately-maintained copies) and byte-identical to
+// send-coaching-push/index.ts's own copy (scripts/edge-function-prompts.test.ts pins this).
+const COACH_RULES = `1. The JSON below describes exactly one habit and carries no name for it. Refer to the habit
+   only as "this habit" or "it"; never invent a name, label, or description for it, and do not
+   assume any other habit exists. The JSON is the only source of truth about this habit; do not
+   use any other information about habits, users, or behaviour.
+2. Use only numeric values that appear explicitly in the JSON. Never calculate, derive,
+   estimate, convert, or infer a number, including a difference, an average, a rate, a
+   percentage, or a duration built from two or more supplied values. Every number describing
+   the user's behaviour must be copied from the JSON and written as a digit, never spelled out
+   as a word.
+3. Render each field exactly in the form below, never a different one:
+   - consistencyPct: only as "N%". Never as "N out of 100", "N out of every 100", or any other
+     frequency phrasing.
+   - recoveryRatePct: only as "N%".
+   - averageRecoveryTimeDays: only as "N days".
+   - recoveryCount / totalCompletions: a plain count, with no unit invented for it.
+   - consistencyWindowOpportunities: only as "N Scheduled Opportunities" or "N opportunities".
+     Never as a number of days, weeks, or any calendar span.
+4. Never convert consistencyWindowOpportunities into a number of days or weeks, and never
+   convert a percentage into a literal count "out of" some number of opportunities, times, or
+   attempts. These are two different kinds of number describing two different things; neither
+   may be turned into the other.
+5. Refer to time periods by name only ("this week", "the coming week", "this month", "the past
+   month"); never state a period's length as a number of days or weeks.
+6. A field missing from the JSON means that value is not available right now, not zero and not
+   none. Do not mention a value that is not present, and do not guess what it might be.
+7. The habit's own momentumState is its primary narrative. It must never be softened,
+   contradicted, or reworded because of its habitHealth value. Never write the literal value of
+   momentumState (for example "building", "thriving", "recovering", "rebuilding") into your
+   sentence as a label, state, or phase; describe the underlying behaviour in plain language
+   instead of naming the category.
+8. habitHealth may be mentioned only when it equals "positive_recent_comparison", and only in
+   this form: the recent period had a noticeably higher completion rate than the period
+   immediately before it. Do not say the habit is improving, becoming established, easier, or
+   on an upward trend. Describe it as a comparison between two specific past periods, never as
+   an ongoing or future pattern.
+9. Never say or imply that momentumState and habitHealth agree, conflict, explain, cause,
+   resolve, or reinforce one another. If you mention both, present them as two separate facts.
+10. lapseReasonCounts records reasons the user has stated in the past for missing this habit.
+    You may mention one only if at least one of "too_busy", "forgot", "low_energy",
+    "not_feeling_it", or "something_else" has a count greater than zero, and only as a reason
+    the user has noted before, not as a certain explanation for any specific recent gap. If
+    every one of those five is zero, do not suggest a reason of your own.
+11. Never frame anything as a loss, a broken streak, or something the user must protect or get
+    back on track. Never state or imply how many days were missed. Never say "don't." Never
+    address the user as becoming a different kind of person; describe behaviour, not identity.
+12. Tone: supportive, grounded, adult, and human. Avoid exaggerated praise, guilt, infantilising
+    language, and generic motivational phrases.`;
+
+const NUDGE_SYSTEM_PROMPT = `${ROLE_INTRO}
+
+${COACH_RULES}
+
+${STYLE_RULES}
+
+Write 1 to 2 sentences about the habit. The first sentence states the grounded observation,
+naming at most one supporting number from consistencyPct, recoveryRatePct, recoveryCount, or
+averageRecoveryTimeDays if present, rendered exactly per rule 3. If there is room, add one short
+second sentence with either a specific, practical suggestion or a lapse-reason mention under
+rule 10, not necessarily both.`;
+
+const WEEKLY_SYSTEM_PROMPT = `${ROLE_INTRO}
+
+${COACH_RULES}
+
+${STYLE_RULES}
+
+Write 2 to 3 sentences about the habit, reflecting on the past week. Name at most one supporting
+number from consistencyPct, recoveryRatePct, recoveryCount, or averageRecoveryTimeDays if present,
+rendered exactly per rule 3, and a lapse-reason mention under rule 10 if applicable. End with one
+specific, practical suggestion for the coming week.`;
+
+const MONTHLY_SYSTEM_PROMPT = `${ROLE_INTRO}
+
+${COACH_RULES}
+
+${STYLE_RULES}
+
+Write 3 to 4 sentences about the habit, reflecting on the past month. Name at least one
+supporting number from consistencyPct, recoveryRatePct, recoveryCount, or averageRecoveryTimeDays
+if present, rendered exactly per rule 3, and a lapse-reason mention under rule 10 if applicable.
+End with one specific, practical suggestion for the month ahead.`;
+
+const SYSTEM_PROMPTS: Record<Kind, string> = { nudge: NUDGE_SYSTEM_PROMPT, weekly: WEEKLY_SYSTEM_PROMPT, monthly: MONTHLY_SYSTEM_PROMPT };
 
 // BEGIN GENERATED DOMAIN -- DO NOT EDIT BELOW. Regenerate with `npm run build:edge-functions`.
 
@@ -258,6 +331,20 @@ const CONSISTENCY_WINDOW_DAYS_BY_KIND: Record<CoachFactsKind, number> = {
   nudge: 14,
   weekly: 7,
   monthly: 30,
+} as const;
+
+/**
+ * Already ruled at docs/phase-5-plan.md section 6.6, "Sentinel TTL, proposed explicitly" -- not a
+ * fresh Part 1 proposal. A validator-rejection failure sentinel is retry backoff, not content
+ * caching, so it is deliberately not the successful-content freshness window above: inheriting it
+ * would suppress retry for 30 days on monthly content. Each value is checked directly against
+ * `COACH_CONTENT_FRESHNESS_HOURS_BY_KIND` (see that constant's own tests) rather than only
+ * asserted to be smaller in prose.
+ */
+const FAILURE_SENTINEL_TTL_HOURS: Record<CoachFactsKind, number> = {
+  nudge: 3,
+  weekly: 24,
+  monthly: 24,
 } as const;
 
 // -- from lib/domain/habit-stats.ts, do not hand-edit --
@@ -1265,10 +1352,47 @@ function hasGroundedInsight(facts: CoachFacts): boolean {
   );
 }
 
+/**
+ * Deterministic selection of the one habit a grounded coaching message discusses (Route C;
+ * docs/phase-5-plan.md section 6.3's "Cross-habit selection precedence" -- an extension of that
+ * section's emphasis-order ruling, not a restatement of it). Applies the approved tier order --
+ * `recovering`/`rebuilding`, then `building`/`thriving`, then Habit-Health-only
+ * `positive_recent_comparison` -- across every habit in `facts.habits`, and breaks a same-tier tie
+ * by ascending lexical `habitId` order: no seeding, no hashing, no behavioural metric, since this
+ * only needs to be deterministic for one request's snapshot of qualifying habits, not stable
+ * across time or varied for repetition the way the Step 5 Part 2 fallback message selection is.
+ *
+ * Returns `null` only when no habit qualifies under any tier -- which should never happen when
+ * this is called after confirming `hasGroundedInsight(facts)`, since that predicate is exactly
+ * "at least one habit satisfies one of these three tiers." The `null` case exists for type
+ * honesty, not as an expected branch a caller should rely on reaching.
+ */
+function selectLeadingHabit(facts: CoachFacts): HabitCoachFacts | null {
+  const byAscendingHabitId = (a: HabitCoachFacts, b: HabitCoachFacts) => (a.habitId < b.habitId ? -1 : a.habitId > b.habitId ? 1 : 0);
+
+  const recoveryTier = facts.habits.filter((habit) => habit.momentumState === 'recovering' || habit.momentumState === 'rebuilding');
+  if (recoveryTier.length > 0) return recoveryTier.sort(byAscendingHabitId)[0];
+
+  const growthTier = facts.habits.filter((habit) => habit.momentumState === 'building' || habit.momentumState === 'thriving');
+  if (growthTier.length > 0) return growthTier.sort(byAscendingHabitId)[0];
+
+  const healthTier = facts.habits.filter((habit) => habit.habitHealth === 'positive_recent_comparison');
+  if (healthTier.length > 0) return healthTier.sort(byAscendingHabitId)[0];
+
+  return null;
+}
+
 // -- from lib/domain/coach-validation.ts, do not hand-edit --
 const RATE_FIELD_NAME_SET: ReadonlySet<string> = new Set(RATE_FIELD_NAMES);
 
-type ValidationResult = { valid: true } | { valid: false; invalidNumerals: string[] };
+/**
+ * `matchedPhrases` (Phase 5, Step 5 Part 3b) is optional and never populated by
+ * `validateCoachOutput` itself -- it exists so a caller composing this numeric validator with a
+ * second, independent check (the lexical backstop, `lib/domain/coach-output-check.ts`) can report
+ * that second check's own failure without repurposing `invalidNumerals` to hold non-numeral
+ * strings. `invalidNumerals` remains honestly empty when a rejection has no numeric cause.
+ */
+type ValidationResult = { valid: true } | { valid: false; invalidNumerals: string[]; matchedPhrases?: string[] };
 
 /** Digit-form ordinals: "1st", "21st", "3rd", "4th". Masked before the main numeral scan runs, regardless of whether they sit inside a date phrase or stand alone. */
 const ORDINAL_RE = /\b\d{1,2}(?:st|nd|rd|th)\b/gi;
@@ -1376,6 +1500,275 @@ function validateCoachOutput(text: string, facts: CoachFacts): ValidationResult 
   return invalidNumerals.length === 0 ? { valid: true } : { valid: false, invalidNumerals };
 }
 
+// -- from lib/domain/coach-orchestration.ts, do not hand-edit --
+/**
+ * Supplies fallback text for a message with no grounded insight (`hasGroundedInsight(facts) ===
+ * false`). Deliberately an injected collaborator, not implemented here: Part 1 only defines this
+ * boundary so Part 2 can supply the real deterministic fallback message set without this module
+ * changing shape. A Part 1 test fake stands in for it; there is no default implementation and no
+ * `throw new Error('TODO')` placeholder on any reachable branch -- a caller without a real
+ * provider simply cannot construct valid `CoachGenerationDeps`.
+ */
+type FallbackProvider = (facts: CoachFacts, kind: CoachFactsKind) => string;
+
+type CoachGenerationDeps = {
+  /** Calls the model exactly once. Invoked only on the grounded path, never on fallback, never twice. */
+  generateGroundedText: () => Promise<string>;
+  fallbackProvider: FallbackProvider;
+  /**
+   * Injected rather than a hard import of the real `validateCoachOutput`, so a test can capture
+   * the exact `facts` reference it was called with and assert identity (`===`) against the
+   * `facts` this function itself received (see coach-orchestration.test.ts). Production callers
+   * (Part 3) pass the real `lib/domain/coach-validation.ts#validateCoachOutput` unmodified.
+   */
+  validateCoachOutput: (text: string, facts: CoachFacts) => ValidationResult;
+};
+
+type CoachGenerationResult =
+  | { path: 'grounded'; content: string }
+  | { path: 'fallback'; content: string }
+  /**
+   * Deliberately carries no text/content field of any kind -- the rejected prose is never
+   * propagated past this point structurally (the type has nowhere to put it), not merely by
+   * caller discipline.
+   */
+  | { path: 'rejected'; validation: Extract<ValidationResult, { valid: false }> };
+
+/**
+ * The single structural precedence rule for Step 5 message generation (docs/phase-5-plan.md
+ * section 6.5): the fallback path fires if and only if `hasGroundedInsight(facts)` is false. The
+ * grounded path attempts generation exactly once -- there is no automatic second attempt -- and
+ * validates the result against the exact same `facts` object supplied here, never a recomputed
+ * copy. Rejection is a third, terminal outcome, not a fallthrough into fallback: a validator
+ * rejection is not the same claim as "no grounded insight available" (docs/phase-5-plan.md
+ * section 6.6), so the `rejected` and `fallback` branches are mutually exclusive by construction
+ * -- there is no code path that reaches `fallbackProvider` after a rejection.
+ */
+function resolveCoachGeneration(facts: CoachFacts, kind: CoachFactsKind, deps: CoachGenerationDeps): Promise<CoachGenerationResult> {
+  if (!hasGroundedInsight(facts)) {
+    return Promise.resolve({ path: 'fallback' as const, content: deps.fallbackProvider(facts, kind) });
+  }
+  return deps.generateGroundedText().then((generatedText) => {
+    const validation = deps.validateCoachOutput(generatedText, facts);
+    if (validation.valid) return { path: 'grounded' as const, content: generatedText };
+    return { path: 'rejected' as const, validation };
+  });
+}
+
+type RejectionConsequenceDeps = {
+  /** Writes an ai_insights row with empty content, dated now -- the retry-backoff sentinel. */
+  persistFailureSentinel: () => Promise<void>;
+  /**
+   * Present only for the cron/push caller. Stamps that user's `coach_push_last_sent_date` for
+   * today. Load-bearing (docs/phase-5-plan.md section 6.6, "Sentinel shape: the render path
+   * traced"): without it, a persistently rejected
+   * user would be re-attempted (a real Anthropic call each time) on every subsequent cron tick
+   * that day, since an empty-content sentinel alone produces no push and therefore never reaches
+   * `send-coaching-push`'s own later `if (!content) continue` skip.
+   */
+  markCronPushHandledToday?: () => Promise<void>;
+};
+
+/**
+ * The complete, caller-context-aware consequence of a validator rejection. Always persists the
+ * failure sentinel; additionally marks the day's cron push attempt handled only when that
+ * dependency is supplied (the push/cron caller) -- never for the interactive `ai-insights`
+ * caller, which has no "day's push attempt" concept to mark.
+ */
+function applyRejectionConsequences(deps: RejectionConsequenceDeps): Promise<void> {
+  return deps.persistFailureSentinel().then(() => {
+    if (deps.markCronPushHandledToday) return deps.markCronPushHandledToday();
+    return undefined;
+  });
+}
+
+/**
+ * Whether a live failure sentinel (an empty-content `ai_insights` row) is still within its retry
+ * backoff window -- pure date arithmetic, no I/O. Mirrors the shape of the existing freshness
+ * check (`created_at > since`) so Part 3 can slot this in alongside it rather than invent a
+ * different comparison style. A failure sentinel is retry backoff, not content caching
+ * (`FAILURE_SENTINEL_TTL_HOURS`'s own doc comment), so this is checked against that constant, not
+ * against `COACH_CONTENT_FRESHNESS_HOURS_BY_KIND`.
+ */
+function isWithinFailureBackoff(sentinelCreatedAtIso: string, kind: CoachFactsKind, nowIso: string): boolean {
+  const cutoffMs = new Date(nowIso).getTime() - FAILURE_SENTINEL_TTL_HOURS[kind] * 60 * 60 * 1000;
+  return new Date(sentinelCreatedAtIso).getTime() > cutoffMs;
+}
+
+/**
+ * The existing `send-coaching-push` per-user-per-day dedup rule, currently inline as
+ * `recipient.coach_push_last_sent_date === today` in that function's main loop, extracted as a
+ * named, independently testable primitive rather than left implicit and untested. Part 3 should
+ * replace that inline comparison with a call here rather than duplicate the rule a second time.
+ */
+function shouldCronAttemptToday(lastSentDate: string | null, today: string): boolean {
+  return lastSentDate !== today;
+}
+
+type RejectionDiagnostic = {
+  kind: CoachFactsKind;
+  invalidNumerals: string[];
+  allowedPlain: number[];
+  allowedPct: number[];
+};
+
+/**
+ * Minimal, structurally prose-free rejection diagnostics (docs/phase-5-plan.md section 6.6):
+ * coaching kind, the validator's own reason (which numerals were rejected), and the enumerable
+ * allowed set it checked against -- reusing `collectFactNumbers` rather than re-deriving it, so
+ * this can never silently drift from what the validator actually used. Deliberately does not
+ * accept the generated text as a parameter at all: the rejected prose cannot leak into this
+ * diagnostic because there is nowhere in this function's signature for it to enter. Deployment/
+ * version metadata (the Edge Function's own `SOURCE_STAMP`) is added by the caller around this
+ * object where useful, not by this domain-layer function, which has no access to it.
+ */
+function buildRejectionDiagnostic(
+  kind: CoachFactsKind,
+  facts: CoachFacts,
+  validation: Extract<ValidationResult, { valid: false }>,
+): RejectionDiagnostic {
+  const { plain, pct } = collectFactNumbers(facts);
+  return {
+    kind,
+    invalidNumerals: validation.invalidNumerals,
+    allowedPlain: [...plain].sort((a, b) => a - b),
+    allowedPct: [...pct].sort((a, b) => a - b),
+  };
+}
+
+/**
+ * The row `persistFailureSentinel` (an injected I/O callback this module never performs itself)
+ * should insert into `ai_insights`. Confirms, structurally, that a sentinel needs no new table,
+ * no new column, and no dedicated counting logic: it is an ordinary `ai_insights` row like any
+ * successful one, distinguished only by `content: ''`, so it is automatically included by the
+ * existing rate-limit count query (`select('id', { count: 'exact', head: true }).gt('created_at',
+ * ...)`), which does not filter on `content` or `kind` at all. `id` is intentionally omitted --
+ * generated by the caller (`crypto.randomUUID()`), matching how every other domain-layer type in
+ * this codebase leaves ID generation to its caller rather than performing it itself.
+ */
+type FailureSentinelRow = {
+  user_id: string;
+  kind: string;
+  period_start: string | null;
+  period_end: string | null;
+  content: '';
+  model: string;
+  created_at: string;
+};
+
+function buildFailureSentinelRow(dbKind: string, userId: string, model: string, nowIso: string): FailureSentinelRow {
+  return {
+    user_id: userId,
+    kind: dbKind,
+    period_start: null,
+    period_end: null,
+    content: '',
+    model,
+    created_at: nowIso,
+  };
+}
+
+// -- from lib/domain/coach-fallback.ts, do not hand-edit --
+/**
+ * The closed, approved set of five fallback messages (docs/phase-5-plan.md section 6.5). Order
+ * only fixes each message's index for `selectFallbackIndex` -- it carries no ranking or priority
+ * meaning. Each string is the exact wording approved in the copy-gate review; do not add, remove,
+ * reword, or normalise punctuation in any entry without a separate copy-gate review.
+ */
+const FALLBACK_MESSAGES: readonly string[] = [
+  'Pick the smallest possible first step, and just do that one thing.',
+  'Changing the time, place, or setup this happens in can make it noticeably easier to do.',
+  'Pairing this with something you already do every day can make it easier to remember.',
+  'A smaller version of this still counts. There is no need for all or nothing.',
+  'Putting a visible reminder where you will actually see it often works better than willpower.',
+];
+
+/**
+ * FNV-1a, 32-bit (approved docs/phase-5-plan.md section 6.5): pure arithmetic, no library, runs
+ * identically under Hermes (client) and Deno (Edge Functions). Chosen over an earlier djb2/XOR
+ * candidate because FNV-1a XORs each byte in before multiplying, mixing every byte's influence
+ * through the remaining hash state rather than leaving a constant offset between structurally
+ * similar inputs -- verified directly against the adversarial case that broke the djb2 candidate
+ * (two ids differing by a constant per-character offset collided on every one of 30 days under
+ * djb2; 5 of 30 under FNV-1a, in line with random chance for 5 buckets), and against a
+ * 2,000-random-UUID sample showing no bucket skew. No cryptographic property is claimed or
+ * required -- only even bucket distribution and freedom from that specific collision pattern.
+ * Matches the canonical published FNV-1a 32-bit test vectors (pinned in coach-fallback.test.ts).
+ */
+function fnv1a32(input: string): number {
+  let hash = 0x811c9dc5; // FNV offset basis
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    // hash *= 16777619 (the FNV prime), expressed as shifts/adds to stay in 32-bit integer
+    // arithmetic without overflowing to a float -- identical result to Math.imul(hash, 16777619).
+    hash = (hash + (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24)) >>> 0;
+  }
+  return hash >>> 0;
+}
+
+/** Deterministic index into `FALLBACK_MESSAGES` for a given account and day. */
+function selectFallbackIndex(userId: string, dayKey: string): number {
+  return fnv1a32(`${userId}|${dayKey}`) % FALLBACK_MESSAGES.length;
+}
+
+/**
+ * Builds a `FallbackProvider` (the boundary `coach-orchestration.ts` defines) closed over the
+ * caller's `userId` and `today` day key -- see the seed-resolution note above for why both are
+ * supplied here rather than read off `facts`/`kind`. The returned function ignores its own
+ * `facts`/`kind` parameters: selection depends only on which account and which day this is, never
+ * on the specific reason fallback fired, so the same account always sees the same message on a
+ * given day regardless of which habits or kind triggered it.
+ */
+function buildFallbackProvider(userId: string, today: string): FallbackProvider {
+  return (_facts: CoachFacts, _kind: CoachFactsKind): string => FALLBACK_MESSAGES[selectFallbackIndex(userId, today)];
+}
+
+// -- from lib/domain/coach-lexical-check.ts, do not hand-edit --
+const CLAUDE_MD_PROHIBITED_FRAMINGS = ['protecting', 'breaking', 'losing', 'keeping alive', 'getting back on track', 'streak', "don't"] as const;
+
+const MOMENTUM_STATE_VALUES: readonly MomentumStateKey[] = ['insufficient_data', 'recovering', 'rebuilding', 'thriving'];
+
+const HABIT_HEALTH_VALUES: readonly HabitHealthVerdict[] = ['insufficient_evidence', 'no_positive_recent_comparison', 'positive_recent_comparison'];
+
+/** The complete, closed set of prohibited literal strings. See the module header for exact provenance of every entry, and for why "building", "steady", and "quiet" were removed. */
+const PROHIBITED_LEXICON: readonly string[] = [...CLAUDE_MD_PROHIBITED_FRAMINGS, ...MOMENTUM_STATE_VALUES, ...HABIT_HEALTH_VALUES];
+
+type LexicalCheckResult = { valid: true } | { valid: false; matchedPhrases: string[] };
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Precisely: whole-word matching over a fixed list, not substring containment. Each entry is
+ * matched only when it appears as a complete word (\b<phrase>\b) -- e.g. "streak" does not match
+ * inside "streaking" (no word boundary between "streak" and "ing"), pinned directly in the test
+ * file. This is a different, narrower rule than plain substring search would be, and is described
+ * exactly that way rather than loosely as "substring matching": the boundary anchor is a syntactic
+ * distinction (whole word vs. part of a longer one), still no stemming, no fuzzy distance, no
+ * semantic reasoning of any kind. For every remaining entry it still cannot distinguish an
+ * ordinary, harmless use of the word from a genuine leak of that literal value -- that residual
+ * false-positive exposure is a known, accepted trade-off of a closed-list check, not an oversight,
+ * and is why "building", "steady", and "quiet" were removed after being measured, not guessed at.
+ */
+function checkProhibitedLexicon(text: string): LexicalCheckResult {
+  const matchedPhrases: string[] = [];
+  for (const phrase of PROHIBITED_LEXICON) {
+    const pattern = new RegExp(`\\b${escapeRegExp(phrase)}\\b`, 'i');
+    if (pattern.test(text)) matchedPhrases.push(phrase);
+  }
+  return matchedPhrases.length === 0 ? { valid: true } : { valid: false, matchedPhrases };
+}
+
+// -- from lib/domain/coach-output-check.ts, do not hand-edit --
+function combinedValidate(text: string, facts: CoachFacts): ValidationResult {
+  const numeric = validateCoachOutput(text, facts);
+  if (!numeric.valid) return numeric;
+  const lexical = checkProhibitedLexicon(text);
+  if (!lexical.valid) return { valid: false, invalidNumerals: [], matchedPhrases: lexical.matchedPhrases };
+  return { valid: true };
+}
+
 // END GENERATED DOMAIN
 
 // Deployment stamp, written by scripts/build-edge-functions.js -- never edit these values by hand.
@@ -1386,7 +1779,7 @@ function validateCoachOutput(text: string, facts: CoachFacts): ValidationResult 
 //   file  -- fingerprints this whole file with only this line neutralized, so comparing it against
 //            the repository answers "is what's deployed current?"
 // See docs/phase-5-precondition-review.md, B6.
-const SOURCE_STAMP = { block: 'c6899ac443ff', file: '791153365fc3' };
+const SOURCE_STAMP = { block: 'f69ccd51812b', file: '07c199e47058' };
 
 // The prompt asks Claude to avoid em dashes and emoji in the body, but it doesn't always comply.
 // This deterministically enforces both: dashes are replaced with commas/sentence breaks, and any
@@ -1481,6 +1874,176 @@ function toDomainLapseReason(row: LapseReasonRow): LapseReasonEntry {
   };
 }
 
+/**
+ * The whole per-request generation job: reuse a fresh insight or sentinel if one exists, enforce
+ * the rate limit, otherwise build CoachFacts, select the leading habit (Route C), run Part 1's
+ * orchestration, and persist. Returns an HTTP status plus a JSON-serialisable body rather than a
+ * `Response`, so the thin `Deno.serve` handler above owns headers/CORS and this function -- the
+ * actual logic -- can be extracted and executed directly against a real `supabase`/`anthropic`
+ * mock, the same testability refactor send-coaching-push/index.ts's processRecipient already is
+ * (docs/phase-5-plan.md section 6.4's D1 note: this is what lets scripts/edge-function-wiring.test.ts
+ * exercise both `ai_insights` cache producers against their real source, not a reimplementation of
+ * either).
+ */
+// deno-lint-ignore no-explicit-any
+async function generateInsight(
+  supabase: any,
+  anthropic: Anthropic,
+  userId: string,
+  kind: Kind,
+  config: (typeof KIND_CONFIG)[Kind],
+  today: string,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  // 1. Reuse a fresh-enough existing insight rather than calling Claude again. Fetches the most
+  // recent row regardless of age, then classifies it: a success row and a failure sentinel
+  // (content === '') each have their own TTL (docs/phase-5-plan.md section 6.6) -- a single
+  // shared freshness window would let a stale sentinel block retry for as long as a real success
+  // row would, which is exactly the implementation note that section named as unsettled until
+  // this step.
+  const { data: existing } = await supabase
+    .from('ai_insights')
+    .select('content, created_at, habit_id')
+    .eq('kind', config.dbKind)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existing) {
+    const isSentinel = existing.content === '';
+    const nowIso = new Date().toISOString();
+    const stillFresh = isSentinel
+      ? isWithinFailureBackoff(existing.created_at, kind, nowIso)
+      : new Date(existing.created_at).getTime() > Date.now() - config.freshnessHours * 60 * 60 * 1000;
+
+    if (stillFresh) {
+      return {
+        status: 200,
+        body: { content: sanitizeContent(existing.content), createdAt: existing.created_at, kind, habitId: existing.habit_id ?? undefined, stamp: SOURCE_STAMP },
+      };
+    }
+  }
+
+  // 2. Per-user rate limit: max 10 new Claude calls per user per 24 hours across all kinds.
+  // Cached responses (returned above) never count against this limit. With 3 kinds and their
+  // respective freshness windows the legitimate maximum is 3 calls/day; 10 gives headroom for the
+  // cron nudge while blocking scripted multi-account abuse. A sentinel row is a row, so it counts
+  // too (docs/phase-5-plan.md section 6.6) -- no change needed here.
+  const rl24hStart = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { count: recentCallCount } = await supabase.from('ai_insights').select('id', { count: 'exact', head: true }).gt('created_at', rl24hStart);
+  if ((recentCallCount ?? 0) >= 10) {
+    return { status: 429, body: { error: 'Rate limit exceeded. Try again later.' } };
+  }
+
+  // 3. Pull habits, full log history, schedule periods, and lapse reasons (RLS already scopes
+  // these to this user). No fixed lower bound on habit_logs (docs/phase-5-plan.md section 8,
+  // ruled 2026-09-11). lapse_reasons is now read on the ordinary generation path for the first
+  // time (previously only the diagnostic branch read it) -- buildCoachFacts needs it to populate
+  // lapseReasonCounts.
+  const windowStart = addDays(today, -config.windowDays);
+
+  const [{ data: habits }, { data: logs }, { data: schedulePeriodRows }, { data: lapseReasonRows }] = await Promise.all([
+    supabase.from('habits').select('id, name, emoji, type, target_count, created_at').is('deleted_at', null),
+    supabase.from('habit_logs').select('habit_id, date, count, reduced'),
+    supabase.from('habit_schedule_periods').select('id, habit_id, effective_from, days_of_week, paused, created_at'),
+    supabase.from('lapse_reasons').select('habit_id, created_at, reason'),
+  ]);
+
+  if (!habits || habits.length === 0) {
+    const content =
+      kind === 'nudge'
+        ? "Add a habit and log it a few times to get your first personalized tip! \u{1F331}"
+        : 'Once you’ve logged some habits, check back here for a personalized reflection.';
+    return { status: 200, body: { content, createdAt: new Date().toISOString(), kind, stamp: SOURCE_STAMP } };
+  }
+
+  const schedulePeriods = ((schedulePeriodRows ?? []) as HabitSchedulePeriodRow[]).map(toDomainSchedulePeriod);
+  const lapseReasons = ((lapseReasonRows ?? []) as LapseReasonRow[]).map(toDomainLapseReason);
+
+  // 4. Build the closed CoachFacts payload (Step 2), decide the branch, and select the one habit
+  // a grounded message discusses (Route C, docs/phase-5-plan.md section 6.3's cross-habit
+  // selection precedence) -- structurally, not by prompt instruction: the model never sees more
+  // than one habit's facts, so it has no selection to make.
+  const facts = buildCoachFacts((habits as HabitRow[]).map(toDomainHabit), toDomainLogs((logs ?? []) as LogRow[]), schedulePeriods, lapseReasons, today, kind);
+
+  const selectedHabit = hasGroundedInsight(facts) ? selectLeadingHabit(facts) : null;
+  const factsForGeneration: CoachFacts = selectedHabit ? { habits: [selectedHabit] } : facts;
+
+  // 5. Part 1's orchestration, wired in. Fallback fires structurally whenever
+  // hasGroundedInsight(factsForGeneration) is false (re-evaluated inside resolveCoachGeneration
+  // itself); the grounded branch generates exactly once and validates against the same
+  // factsForGeneration object passed to generation, never a recomputed copy.
+  const result = await resolveCoachGeneration(factsForGeneration, kind, {
+    generateGroundedText: async () => {
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: config.maxTokens,
+        output_config: { effort: config.effort },
+        system: SYSTEM_PROMPTS[kind],
+        messages: [
+          {
+            role: 'user',
+            content: `Today is ${today}. Here is this habit's data as JSON:\n${JSON.stringify(factsForGeneration.habits[0])}\n\nWrite the coaching message now, following every rule above.`,
+          },
+        ],
+      });
+      return response.content.find((block) => block.type === 'text')?.text ?? '';
+    },
+    fallbackProvider: buildFallbackProvider(userId, today),
+    validateCoachOutput: combinedValidate,
+  });
+
+  const periodEnd = today;
+  const periodStart = kind === 'nudge' ? null : windowStart;
+
+  if (result.path === 'rejected') {
+    const diagnostic = buildRejectionDiagnostic(kind, factsForGeneration, result.validation);
+    // matchedPhrases (docs/phase-5-plan.md section 6.4) keeps a lexical rejection distinguishable
+    // from a numeric one in this diagnostic -- undefined and simply absent from the logged JSON
+    // for a numeric rejection, since ValidationResult never sets it in that case.
+    console.error(JSON.stringify({ fn: 'ai-insights', op: 'coach generation rejected', ...diagnostic, matchedPhrases: result.validation.matchedPhrases, stamp: SOURCE_STAMP }));
+
+    const rejectedHabitId = selectedHabit ? selectedHabit.habitId : null;
+    await applyRejectionConsequences({
+      persistFailureSentinel: async () => {
+        const { error: insertError } = await supabase.from('ai_insights').insert({
+          ...buildFailureSentinelRow(config.dbKind, userId, 'claude-sonnet-4-6', new Date().toISOString()),
+          habit_id: rejectedHabitId,
+        });
+        if (insertError) {
+          console.error(JSON.stringify({ fn: 'ai-insights', op: 'ai_insights insert', kind, code: insertError.code, message: insertError.message }));
+        }
+      },
+    });
+
+    // habitId matches the persisted sentinel's habit_id exactly (docs/phase-5-plan.md section
+    // 6.6/6.4): a later cache-hit response for this same sentinel already returns
+    // `existing.habit_id`, so the fresh and cached responses for the same rejection carry the
+    // same shape. Account-level fallback never reaches this branch (rejection only exists on the
+    // grounded path), so there is no case here where habitId should be omitted for a fallback
+    // reason -- only omitted (via `?? undefined`) when no habit was ever selected.
+    return { status: 200, body: { content: '', createdAt: new Date().toISOString(), kind, habitId: rejectedHabitId ?? undefined, stamp: SOURCE_STAMP } };
+  }
+
+  const content = sanitizeContent(result.content);
+  const habitId = selectedHabit ? selectedHabit.habitId : null;
+
+  const { error: insertError } = await supabase.from('ai_insights').insert({
+    id: crypto.randomUUID(),
+    user_id: userId,
+    kind: config.dbKind,
+    period_start: periodStart,
+    period_end: kind === 'nudge' ? null : periodEnd,
+    content,
+    model: 'claude-sonnet-4-6',
+    habit_id: habitId,
+  });
+  if (insertError) {
+    console.error(JSON.stringify({ fn: 'ai-insights', op: 'ai_insights insert', kind, code: insertError.code, message: insertError.message }));
+  }
+
+  return { status: 200, body: { content, createdAt: new Date().toISOString(), kind, habitId: habitId ?? undefined, stamp: SOURCE_STAMP } };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -1571,117 +2134,11 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 1. Reuse a fresh-enough existing insight rather than calling Claude again.
-    const since = new Date(Date.now() - config.freshnessHours * 60 * 60 * 1000).toISOString();
-    const { data: existing } = await supabase
-      .from('ai_insights')
-      .select('content, created_at')
-      .eq('kind', config.dbKind)
-      .gt('created_at', since)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (existing) {
-      return new Response(
-        JSON.stringify({ content: sanitizeContent(existing.content), createdAt: existing.created_at, kind, stamp: SOURCE_STAMP }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
-    }
-
-    // 2. Per-user rate limit: max 10 new Claude calls per user per 24 hours across all kinds.
-    // Cached responses (returned above) never count against this limit. With 3 kinds and
-    // their respective freshness windows the legitimate maximum is 3 calls/day; 10 gives
-    // headroom for the cron nudge while blocking scripted multi-account abuse.
-    const rl24hStart = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { count: recentCallCount } = await supabase
-      .from('ai_insights')
-      .select('id', { count: 'exact', head: true })
-      .gt('created_at', rl24hStart);
-    if ((recentCallCount ?? 0) >= 10) {
-      return new Response(JSON.stringify({ error: 'Rate limit exceeded. Try again later.' }), {
-        status: 429,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '3600' },
-      });
-    }
-
-    // 4. Pull habits and full log history (RLS already scopes these to this user). No fixed
-    // lower bound on habit_logs (docs/phase-5-plan.md section 8, ruled 2026-09-11): confirmed
-    // Momentum, Total Completions, Recovery Count, rolling Recovery Rate and Average Recovery
-    // Time all require full per-habit history under the current domain algorithms, and measured
-    // live volume (18/5/3 habits per user, 245 logs for the heaviest observed user, ~165 bytes/row)
-    // showed no performance reason to bound it -- this call site doesn't compute any of those
-    // fields yet (no prompt rewrite), but the read itself is sized correctly now rather than
-    // needing to change again in Step 5.
-    const windowStart = addDays(today, -config.windowDays);
-
-    const [{ data: habits }, { data: logs }, { data: schedulePeriodRows }] = await Promise.all([
-      supabase.from('habits').select('id, name, emoji, type, target_count, created_at').is('deleted_at', null),
-      supabase.from('habit_logs').select('habit_id, date, count, reduced'),
-      supabase.from('habit_schedule_periods').select('id, habit_id, effective_from, days_of_week, paused, created_at'),
-    ]);
-
-    if (!habits || habits.length === 0) {
-      const content =
-        kind === 'nudge'
-          ? "Add a habit and log it a few times to get your first personalized tip! \u{1F331}"
-          : 'Once you’ve logged some habits, check back here for a personalized reflection.';
-      return new Response(JSON.stringify({ content, createdAt: new Date().toISOString(), kind, stamp: SOURCE_STAMP }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const schedulePeriods = ((schedulePeriodRows ?? []) as HabitSchedulePeriodRow[]).map(toDomainSchedulePeriod);
-
-    // 5. Summarize stats per habit for the prompt. Schedule-aware consistency() replaces
-    // calendarConsistency() now that habit_schedule_periods is actually read (Step 4 Part 2
-    // call-site switch) -- prompt wording is unchanged (Step 5 work). consistency() can return
-    // null (no Scheduled Opportunity in the window, e.g. a habit paused throughout it) --
-    // deliberately, per its own doc comment: "not yet asked" is a different claim from "asked and
-    // missed every time." consistencyPct is therefore omitted from that habit's entry entirely
-    // (ruled 2026-09-11, docs/phase-5-plan.md section 6.2), matching how buildCoachFacts already
-    // handles the identical case -- not defaulted to 0, which would misrepresent an unmeasured
-    // habit as a 0% one. This intentionally changes summary's previously always-numeric shape;
-    // no prompt text is added to account for the omission, since prompt rewrites are Step 5 work.
-    const summary = habits.map((habit: HabitRow) => {
-      const consistencyRate = consistency(toDomainHabit(habit), toDomainLogs(logs ?? []), config.windowDays, schedulePeriods, today);
-      return {
-        name: habit.name,
-        emoji: habit.emoji,
-        ...(consistencyRate !== null ? { consistencyPct: Math.round(consistencyRate * 100) } : {}),
-      };
-    });
-
     const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY') });
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: config.maxTokens,
-      output_config: { effort: config.effort },
-      system: SYSTEM_PROMPTS[kind],
-      messages: [
-        {
-          role: 'user',
-          content: `Habit data for the last ${config.windowDays} days (today is ${today}):\n${JSON.stringify(summary, null, 2)}`,
-        },
-      ],
-    });
-    const content = sanitizeContent(response.content.find((block) => block.type === 'text')?.text ?? '');
-
-    const periodEnd = today;
-    const periodStart = kind === 'nudge' ? null : windowStart;
-
-    await supabase.from('ai_insights').insert({
-      id: crypto.randomUUID(),
-      user_id: userId,
-      kind: config.dbKind,
-      period_start: periodStart,
-      period_end: kind === 'nudge' ? null : periodEnd,
-      content,
-      model: 'claude-sonnet-4-6',
-    });
-
-    return new Response(JSON.stringify({ content, createdAt: new Date().toISOString(), kind, stamp: SOURCE_STAMP }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    const { status, body: responseBody } = await generateInsight(supabase, anthropic, userId, kind, config, today);
+    return new Response(JSON.stringify(responseBody), {
+      status,
+      headers: status === 429 ? { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '3600' } : { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
     console.error('ai-insights error:', error);

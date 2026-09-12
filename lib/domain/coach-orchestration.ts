@@ -74,7 +74,7 @@ export type CoachGenerationResult =
  */
 function resolveCoachGeneration(facts: CoachFacts, kind: CoachFactsKind, deps: CoachGenerationDeps): Promise<CoachGenerationResult> {
   if (!hasGroundedInsight(facts)) {
-    return Promise.resolve({ path: 'fallback', content: deps.fallbackProvider(facts, kind) });
+    return Promise.resolve({ path: 'fallback' as const, content: deps.fallbackProvider(facts, kind) });
   }
   return deps.generateGroundedText().then((generatedText) => {
     const validation = deps.validateCoachOutput(generatedText, facts);

@@ -39,7 +39,10 @@ const DOMAIN_DIR = path.join(ROOT, 'lib', 'domain');
 const SOURCES = [
   { file: 'day-key.ts', names: ['dayKey', 'addDays', 'parseDayKeyParts', 'weekdayOf', 'localDayKeyOf', 'daysBetween'] },
   { file: 'schedule.ts', names: ['scheduleForDate', 'isScheduledOpportunity', 'scheduledOpportunitiesUpTo', 'scheduledOpportunitiesInWindow'] },
-  { file: 'config.ts', names: ['RECOVERY_CONFIG', 'MOMENTUM_CONFIG', 'HABIT_HEALTH_CONFIG', 'CoachFactsKind', 'CONSISTENCY_WINDOW_DAYS_BY_KIND'] },
+  {
+    file: 'config.ts',
+    names: ['RECOVERY_CONFIG', 'MOMENTUM_CONFIG', 'HABIT_HEALTH_CONFIG', 'CoachFactsKind', 'CONSISTENCY_WINDOW_DAYS_BY_KIND', 'FAILURE_SENTINEL_TTL_HOURS'],
+  },
   {
     file: 'habit-stats.ts',
     names: [
@@ -108,6 +111,7 @@ const SOURCES = [
       'buildCoachFacts',
       'QUALIFYING_MOMENTUM_STATES',
       'hasGroundedInsight',
+      'selectLeadingHabit',
     ],
   },
   {
@@ -126,6 +130,62 @@ const SOURCES = [
       'isGrounded',
       'validateCoachOutput',
     ],
+  },
+  {
+    // Phase 5, Step 5 Part 3b: Part 1's orchestration is now a real caller (both Edge Functions'
+    // ordinary generation paths), so its complete public surface enters SOURCES -- every symbol
+    // here is either called directly by the hand-maintained call-site code or referenced by the
+    // signature of one that is (resolveCoachGeneration's own parameter/return types, for
+    // instance), never added for symmetry.
+    file: 'coach-orchestration.ts',
+    names: [
+      'FallbackProvider',
+      'CoachGenerationDeps',
+      'CoachGenerationResult',
+      'resolveCoachGeneration',
+      'RejectionConsequenceDeps',
+      'applyRejectionConsequences',
+      'isWithinFailureBackoff',
+      'shouldCronAttemptToday',
+      'RejectionDiagnostic',
+      'buildRejectionDiagnostic',
+      'FailureSentinelRow',
+      'buildFailureSentinelRow',
+    ],
+  },
+  {
+    // Phase 5, Step 5 Part 3b: the account-level deterministic fallback (Step 5 Part 2), now
+    // actually wired into both Edge Functions. FALLBACK_MESSAGES and fnv1a32/selectFallbackIndex
+    // are listed alongside buildFallbackProvider because its body calls them by name -- the
+    // generator splices exactly the named declarations, not their transitive callees.
+    file: 'coach-fallback.ts',
+    names: ['FALLBACK_MESSAGES', 'fnv1a32', 'selectFallbackIndex', 'buildFallbackProvider'],
+  },
+  {
+    // Phase 5, Step 5 Part 3b: the lexical backstop, now called alongside validateCoachOutput at
+    // both ordinary generation call sites. escapeRegExp is listed because checkProhibitedLexicon's
+    // body calls it by name; CLAUDE_MD_PROHIBITED_FRAMINGS/MOMENTUM_STATE_VALUES/
+    // HABIT_HEALTH_VALUES are listed because PROHIBITED_LEXICON's own declaration references all
+    // three by name (caught directly by this repository's own Step 1 strict type-check guard when
+    // first omitted -- see docs/phase-5-plan.md section 10).
+    file: 'coach-lexical-check.ts',
+    names: [
+      'CLAUDE_MD_PROHIBITED_FRAMINGS',
+      'MOMENTUM_STATE_VALUES',
+      'HABIT_HEALTH_VALUES',
+      'PROHIBITED_LEXICON',
+      'LexicalCheckResult',
+      'escapeRegExp',
+      'checkProhibitedLexicon',
+    ],
+  },
+  {
+    // Phase 5, Step 5 Part 3b, D1 fix: combinedValidate moved here from being hand-duplicated in
+    // both Edge Functions, so both cache producers run the identical numeric+lexical check by
+    // construction. Called directly at both ordinary generation call sites as
+    // `deps.validateCoachOutput`.
+    file: 'coach-output-check.ts',
+    names: ['combinedValidate'],
   },
 ];
 
@@ -233,10 +293,23 @@ function extractDeclarations(source, names) {
       let start = i;
       while (start > 0 && /^\s*(\/\*\*|\*\/|\*|\/\/)/.test(lines[start - 1])) start -= 1;
 
+      // `keyword` distinguishes `type` from `function`/`const` below: a `type` alias always
+      // terminates with a semicolon at brace/paren depth 0 by TypeScript syntax, even when its
+      // right-hand side is a multi-line union with more than one independent `{...}` member (e.g.
+      // `type X = | {...} | {...} | {...};`) -- each member closes its own brace back to depth 0
+      // on its own line, so "depth returned to 0 after opening" is true after the *first* member
+      // and is not, by itself, evidence the declaration is complete. Confirmed directly: this
+      // caused CoachGenerationResult (three `|`-joined members, the middle transition separated by
+      // an interior doc comment) to truncate after its first member alone -- the same class of bug
+      // as the Step 3 `meetsRateWindow` truncation, a different concrete trigger. `function`/
+      // `const` bodies are unaffected by this distinction: a function/arrow body's own closing
+      // brace *is* its true end, with no further semicolon-terminated content expected after it.
+      const keyword = match[1];
       let depth = 0;
       let parenDepth = 0;
       let seenOpen = false;
       let inBlockComment = false;
+      let semicolonAtDepthZero = false;
       let end = i;
       for (; end < lines.length; end += 1) {
         const line = lines[end];
@@ -268,11 +341,17 @@ function extractDeclarations(source, names) {
             parenDepth += 1;
           } else if (ch === ')') {
             parenDepth -= 1;
+          } else if (ch === ';' && depth === 0 && parenDepth <= 0) {
+            semicolonAtDepthZero = true;
           }
           idx += 1;
         }
-        if (seenOpen && depth === 0 && parenDepth <= 0) break;
-        if (!seenOpen && parenDepth <= 0 && /;\s*$/.test(line)) break;
+        if (keyword === 'type') {
+          if (semicolonAtDepthZero) break;
+        } else {
+          if (seenOpen && depth === 0 && parenDepth <= 0) break;
+          if (!seenOpen && parenDepth <= 0 && /;\s*$/.test(line)) break;
+        }
       }
 
       chunks.push(lines.slice(start, end + 1).join('\n'));

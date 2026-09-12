@@ -200,6 +200,14 @@ export default function ProgressScreen() {
   const aggregateWeeklyConsistency = averageConsistencyPct(habits, logs, schedulePeriods, 7);
   const aggregateMonthlyConsistency = averageConsistencyPct(habits, logs, schedulePeriods, 30);
 
+  // Phase 5, Step 5 Part 3b (Route C): grounded coaching is about exactly one habit, identified by
+  // habitId, never by name in the generated text itself. Resolved against the store's own already-
+  // loaded habits array -- no new fetch. Absent for the account-level fallback (no habitId at all)
+  // and silently omitted if the habit was deleted since the insight was generated; the coaching
+  // text still renders either way.
+  const nudgeHabit = nudge?.habitId ? habits.find((habit) => habit.id === nudge.habitId) : undefined;
+  const reflectionHabit = reflection?.habitId ? habits.find((habit) => habit.id === reflection.habitId) : undefined;
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -242,7 +250,14 @@ export default function ProgressScreen() {
                   <ThemedText style={{ color: colors.icon, fontSize: 13 }}>Thinking about your habits...</ThemedText>
                 </ThemedView>
               ) : (
-                <ThemedText style={{ fontSize: 14, lineHeight: 20 }}>{nudge?.content ?? 'No tip yet.'}</ThemedText>
+                <>
+                  {nudgeHabit && (
+                    <ThemedText style={{ color: colors.icon, fontSize: 12 }}>
+                      {nudgeHabit.emoji} {nudgeHabit.name}
+                    </ThemedText>
+                  )}
+                  <ThemedText style={{ fontSize: 14, lineHeight: 20 }}>{nudge?.content ?? 'No tip yet.'}</ThemedText>
+                </>
               )}
 
               <ThemedView style={[styles.coachDivider, { borderColor: colors.icon }]} />
@@ -281,7 +296,14 @@ export default function ProgressScreen() {
                   <ThemedText style={{ color: colors.icon, fontSize: 13 }}>Putting together your reflection...</ThemedText>
                 </ThemedView>
               ) : (
-                <ThemedText style={{ fontSize: 14, lineHeight: 20 }}>{reflection?.content ?? 'No reflection yet.'}</ThemedText>
+                <>
+                  {reflectionHabit && (
+                    <ThemedText style={{ color: colors.icon, fontSize: 12 }}>
+                      {reflectionHabit.emoji} {reflectionHabit.name}
+                    </ThemedText>
+                  )}
+                  <ThemedText style={{ fontSize: 14, lineHeight: 20 }}>{reflection?.content ?? 'No reflection yet.'}</ThemedText>
+                </>
               )}
             </ThemedView>
           )}
