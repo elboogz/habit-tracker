@@ -853,11 +853,24 @@ Residual gap, recorded as debt rather than fixed with a schema change: a rejecte
 
 Keep "No tip yet." No error state, no retry affordance.
 
-### Cache invalidation at cutover **[Ruled]**
+### Cache invalidation at cutover **[Ruled — executed 2026-09-13]**
 
 Clearing the affected `ai_insights` rows is an **explicit Step 5 cutover action**, not a manual afterthought, so testers do not spend up to 30 days evaluating pre-rewrite content. No general cache-versioning infrastructure is built.
 
-**The exact operation and its scope will be shown for approval before execution**, per your ruling. It is not stated here because it is a destructive production operation and belongs in the execution step, not in a plan document.
+**Executed as Step 5 Part 3c, Operation 4, unconditionally (`delete from public.ai_insights;`, no `WHERE` clause).** Scope was every row for every user and kind, not a subset: there is no column distinguishing a row written by the pre-cutover mechanism from one written after, so an unconditional clear is what the ruling actually requires, not a stronger-than-necessary choice. This also means the clear could in principle have discarded a genuine post-cutover row written in the short interval between the paste and the clear — that is accepted as the cost of establishing a clean boundary, not evidence that no such row existed.
+
+**Before-and-after record, from the pre- and post-clear read-only queries actually run, not asserted from memory:**
+
+| | Before | After |
+|---|---|---|
+| `nudge` | 15 rows | — |
+| `weekly_reflection` | 6 rows | — |
+| `monthly_reflection` | 2 rows | — |
+| **Total** | **23 rows** | **0 rows** |
+| Sentinel rows (`content = ''`) | 0 | — |
+| Newest row before the clear | `2026-09-08 10:51:02.443224+00` | — |
+
+**Stated carefully, not overstated:** the pre-clear inspection found no row newer than 2026-09-08, five days before the 2026-09-13 cutover — consistent with no post-deployment row having been present in `ai_insights` at the moment of the clear. This is not proof that no post-deployment write ever occurred between the paste and the clear; it is what the one inspection actually run found, recorded as evidence rather than inferred as a guarantee.
 
 ## 6.7 Branch attribution for testing **[Ruled]**
 

@@ -104,7 +104,7 @@ The newer `sb_publishable_...` key was **not tested** for this procedure — rec
 
 **Interpreting the result:** both `file` values match the repo → current and consistent. Neither matches, `block` values equal each other → *stale pair*, the failure already experienced. One matches and one does not → *mismatched pair*, which matters because the two functions share the `ai_insights` nudge cache.
 
-**Block hash history** (update at each future paste, not just kept as the latest value, so a stale-pair diagnosis has a real prior value to compare against): pre-Step-3 deployed block `be472da09aa4`; Step 3 deployed block `c6899ac443ff` (repository commit `afac4f0`), confirmed live on both functions 2026-09-10.
+**Block hash history** (update at each future paste, not just kept as the latest value, so a stale-pair diagnosis has a real prior value to compare against): pre-Step-3 deployed block `be472da09aa4`; Step 3 deployed block `c6899ac443ff` (repository commit `afac4f0`), confirmed live on both functions 2026-09-10; Step 5 Part 3c deployed block `f69ccd51812b` (repository commit `1d422ee`), confirmed live on both functions 2026-09-13 (`ai-insights` file `07c199e47058`, `send-coaching-push` file `75295302c565`).
 
 ## Momentum contracts (Phase 4 post-completion)
 
