@@ -5,14 +5,30 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import Anthropic from 'npm:@anthropic-ai/sdk';
 
-// Set the ALLOWED_ORIGIN secret in Supabase Edge Function secrets to your production
-// web domain (e.g. https://your-app.expo.app). Falls back to localhost for local dev.
-// The native iOS/Android app sends no Origin header so CORS is irrelevant there.
-const corsHeaders = {
-  'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') ?? 'http://localhost:8081',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Vary': 'Origin',
-};
+// Two independent, optional exact-match origins -- never a wildcard, never a prefix/suffix/
+// subdomain/regex match, and never one echoed back for the other's request. Neither has a
+// permissive fallback: leaving one unset means no browser at that origin class can call this
+// function (Access-Control-Allow-Origin is omitted from the response, not defaulted or
+// wildcarded). ALLOWED_ORIGIN_DEV is only needed to test the web build against this deployed
+// function locally (the current development deployment sets it to http://localhost:8081).
+// ALLOWED_ORIGIN_PROD must be set to the real production web origin before web launch, and is
+// expected to remain unset until then -- that absence is the launch guard, and it survives
+// clearing ALLOWED_ORIGIN_DEV (or never setting it) without code changes either way. The native
+// iOS/Android app sends no Origin header, so neither secret affects it, and a missing Origin never
+// gates or alters normal request processing (see docs/phase-5-plan.md section 6.8).
+const ALLOWED_ORIGIN_DEV = Deno.env.get('ALLOWED_ORIGIN_DEV');
+const ALLOWED_ORIGIN_PROD = Deno.env.get('ALLOWED_ORIGIN_PROD');
+
+function buildCorsHeaders(requestOrigin: string | null): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Vary': 'Origin',
+  };
+  if (requestOrigin !== null && (requestOrigin === ALLOWED_ORIGIN_DEV || requestOrigin === ALLOWED_ORIGIN_PROD)) {
+    headers['Access-Control-Allow-Origin'] = requestOrigin;
+  }
+  return headers;
+}
 
 type Kind = 'nudge' | 'weekly' | 'monthly';
 
@@ -1779,7 +1795,7 @@ function combinedValidate(text: string, facts: CoachFacts): ValidationResult {
 //   file  -- fingerprints this whole file with only this line neutralized, so comparing it against
 //            the repository answers "is what's deployed current?"
 // See docs/phase-5-precondition-review.md, B6.
-const SOURCE_STAMP = { block: 'f69ccd51812b', file: '07c199e47058' };
+const SOURCE_STAMP = { block: 'f69ccd51812b', file: '0c0ad2d65daf' };
 
 // The prompt asks Claude to avoid em dashes and emoji in the body, but it doesn't always comply.
 // This deterministically enforces both: dashes are replaced with commas/sentence breaks, and any
@@ -2045,6 +2061,8 @@ async function generateInsight(
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = buildCorsHeaders(req.headers.get('Origin'));
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }

@@ -55,6 +55,20 @@ Verification after each paste, per `docs/phase-5-precondition-review.md`'s "B6 l
 - both `block` values equal each other → same generated revision;
 - each `file` value matches the repository → neither is stale.
 
+### Narrow exception: function-local transport/envelope-only changes **[New]**
+
+A single-function paste is permitted, without violating the rule above, **only** when every one of the following is proven before deployment, not merely asserted:
+
+- the regenerated `block` fingerprint is unchanged from the currently-deployed value (the generated-domain block's content did not change);
+- the change does not touch `buildCoachFacts`, `hasGroundedInsight`, `selectLeadingHabit`, `resolveCoachGeneration`, `combinedValidate`, freshness classification, or anything else that determines what a producer writes into the shared `ai_insights` cache — shared-cache read/write semantics are unchanged;
+- the other Edge Function's source is byte-identical (`git diff` empty) to what is already deployed there;
+- the other Edge Function's `file` fingerprint is therefore unchanged and requires no re-verification beyond confirming it still matches the repository;
+- no prompt, domain, orchestration, validator, or freshness behaviour changed in either function.
+
+The reasoning: the both-together rule exists to prevent exactly one failure mode — a change to what a producer writes into the shared `ai_insights` cache, deployed to only one of the two producers, so cache rows under the same `kind` disagree about the facts/logic behind them. A change that touches neither the generated block nor any cache-content-producing logic, and leaves the other function's source untouched, cannot produce that failure mode by construction. This is not a general carve-out: it applies only to a change confined to a function's own request/response transport envelope (headers, method routing, CORS) with zero reach into coaching content, cache semantics, or the other function. Any change that could plausibly affect shared coaching behaviour or cache provenance — including anything inside the generated block, or anything that changes what either function persists — is not covered by this exception and must still follow the both-together discipline above.
+
+**First and, as of this writing, only invocation:** the Step 5 Part 3c post-cutover CORS fix (§6.8) — `ai-insights`'s `Access-Control-Allow-Origin` handling, confined to hand-maintained code entirely outside the generated-domain markers, with `send-coaching-push` untouched. See §6.8 for the proof applied to that specific change.
+
 ---
 
 # 3. Step 1 — Generated Edge Function type-check guard
@@ -942,6 +956,26 @@ Recorded consequence: the diagnostic branch ships to production for the duration
 A checked-in claim that the diagnostic was removed is explicitly **not** proof. B6 records that this project has already run that experiment: a completion report asserted both functions were deployed, four commits then landed, and nothing updated it. The stamp is the observation; the assertion is not.
 
 **Hard downstream gate. [Ruled]** **Phase 6 does not begin while the diagnostic branch is still deployed.** This is a Phase 6 entry precondition, and the proof above is what satisfies it. If the Acceptance Gate closes and the diagnostic has not been removed and verified, Phase 6 is blocked — not delayed by convention, blocked by a precondition, in the same way Phase 5's own preconditions blocked it.
+
+---
+
+## 6.8 Post-cutover CORS incident and fix **[New]**
+
+**Symptom.** After Step 5 Part 3c's cache clear (§6.6, "Cache invalidation at cutover"), the Progress screen's web build showed "No tip yet." / "No reflection yet." for a real account. Live Supabase Invocations evidence for `ai-insights` showed exactly two `200 OPTIONS` requests and zero `POST` requests for a controlled reload — the browser was never sending the actual request.
+
+**Root cause, proven live.** `ai-insights/index.ts`'s `corsHeaders` computed `Access-Control-Allow-Origin` once at module load from a single `ALLOWED_ORIGIN` secret, with no fallback to the request's actual `Origin`. A direct curl reproduction of the preflight against the deployed function showed the secret was set to a placeholder production domain (`https://REPLACE-BEFORE-WEB-LAUNCH.example.com`), which every OPTIONS response then returned unconditionally, regardless of who asked. The web client's origin, `http://localhost:8081`, never matched — a `403`-equivalent CORS failure at the browser layer, entirely independent of `Access-Control-Allow-Headers` (confirmed sufficient: the browser's actual `Access-Control-Request-Headers` matched the deployed allow-list exactly) and of `Access-Control-Allow-Methods` (confirmed irrelevant: POST is a CORS-safelisted method, per the Fetch spec and MDN's `Access-Control-Allow-Methods` reference, and is permitted regardless of whether that header is present).
+
+**Pre-existing, not a Phase 5 regression.** The `corsHeaders` code computing a single static origin value is unchanged since the function's original 2026-06-22 commit; no Phase 5 commit (Part 3b or 3c) touched CORS handling, `lib/supabase.ts`'s client construction, or the installed `@supabase/supabase-js` version. The cache clear did not cause this — it removed the cached rows that had been masking a browser call path that had no proof of ever having worked.
+
+**Fix: an explicit two-origin allow-list, exact match only.**
+
+- `ALLOWED_ORIGIN_DEV` and `ALLOWED_ORIGIN_PROD` — two optional secrets, each an exact origin string, matched by strict equality only (no wildcard, no prefix/suffix/subdomain/regex matching).
+- `Access-Control-Allow-Origin` is echoed back only when the request's `Origin` exactly equals one of the two configured values; otherwise the header is **omitted** from the response entirely (never set to a non-matching value, never wildcarded).
+- Neither secret has a permissive fallback. Leaving `ALLOWED_ORIGIN_DEV` unset means no local-web-development origin is permitted; leaving `ALLOWED_ORIGIN_PROD` unset means no production browser origin is permitted. Each fails closed independently for its own origin class.
+- A request with no `Origin` header at all (curl, cron, any server-to-server caller — including the existing B6 stamp-verification procedure) is unaffected: CORS header computation is fully decoupled from request authorization and processing, so such a request is served exactly as before, only without an `Access-Control-Allow-Origin` header it never inspects.
+- `ALLOWED_ORIGIN_DEV` is required only when browser development against the *deployed* function is needed (for the current development deployment, set to `http://localhost:8081`). `ALLOWED_ORIGIN_PROD` must be explicitly configured before web launch and is expected to remain unset until then — its absence is the launch guard, now isolated to a single, unambiguously-named slot instead of shared with local development.
+
+**Deployment-scope proof (§2's narrow exception, applied).** The change is confined to hand-maintained code before the `BEGIN GENERATED DOMAIN` marker and inside `ai-insights`'s own `Deno.serve` handler — it does not touch `buildCoachFacts`, `resolveCoachGeneration`, `combinedValidate`, freshness classification, or any cache-content-producing logic. `send-coaching-push/index.ts` has no CORS/Origin handling at all (confirmed by grep: zero matches for `ALLOWED_ORIGIN`, `Access-Control`, `corsHeaders`, `OPTIONS`) and is not touched by this change — its source stays byte-identical and its `file` fingerprint is unaffected. The regenerated `block` fingerprint is unchanged for both functions. This satisfies every condition of §2's narrow exception; only `ai-insights` needs to be pasted for this fix.
 
 ---
 
