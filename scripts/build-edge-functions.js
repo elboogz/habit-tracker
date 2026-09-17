@@ -1,10 +1,15 @@
 #!/usr/bin/env node
 // Regenerates the shared-domain block inside both Deno Edge Functions from lib/domain/, so the
-// same business logic (dayKey, addDays, isDoneOnDay, calendarStreakForHabit, calendarConsistency
-// today; more as Phase 5 needs it) is never hand-duplicated a third time. calendarStreakForHabit
-// and calendarConsistency, not streakForHabit/consistency: neither Edge Function fetches
-// habit_schedule_periods, so they keep the pre-Scheduled-Opportunity calendar-day behavior under
-// an honest name until that's addressed (see lib/domain/habit-stats.ts's doc comments on each).
+// same business logic (dayKey, addDays, isDoneOnDay, buildCoachFacts and its closure, more as
+// Phase 5 needs it) is never hand-duplicated a third time. `calendarStreakForHabit`,
+// `calendarConsistency`, `countForDay`, `DayStatus`, and `recentHistory` were removed from this
+// whitelist in the Step 5 Part 3 legacy-symbol cleanup (docs/phase-5-plan.md section 6.3): the
+// pre-Phase-5 `calendar*` prompt-building code that called them directly no longer exists once
+// both functions consume `CoachFacts` (Step 5), and nothing else in either Edge Function's
+// hand-maintained code or in the rest of the generated-block closure references them. They remain
+// exported from `lib/domain/habit-stats.ts` for their existing client consumers (Habit Detail,
+// the heatmap components) -- only their Edge Function inclusion was removed, not their
+// implementation.
 // See
 // docs/phase-2-implementation-plan.md section 2 for the full design: the Edge Functions are
 // hand-pasted into the Supabase Dashboard, with no CLI deploy and no build step, so a live shared
@@ -24,18 +29,17 @@ const DOMAIN_DIR = path.join(ROOT, 'lib', 'domain');
 // Phase 5, Step 3 (docs/phase-5-plan.md section 6.1): extends the pre-Phase-5 whitelist with the
 // transitive closure required by buildCoachFacts, hasGroundedInsight and validateCoachOutput,
 // hand-enumerated (including private helpers) by an import-aware walk from those three roots --
-// re-derived directly from the current source, not copied from any prior estimate. The pre-Phase-5
-// entries below are kept exactly as they were: both Edge Functions' existing nudge/reflection
-// prompts still call calendarStreakForHabit/calendarConsistency/etc. directly (no call site has
-// been switched yet -- see the Step 3 boundary below), so removing them would silently break code
-// that is still live. `momentum()` is deliberately excluded: it has zero non-test callers and does
-// not appear in the computed closure -- see docs/phase-5-plan.md section 6.1, "momentum() stays
-// excluded". `computeConfirmedState` (the generic, non-chain-aware hysteresis helper) is also
-// excluded: `confirmedStateAt` no longer calls it (see CLAUDE.md's Momentum contracts section), so
-// it is not part of the real closure despite living in the same file.
-// Deliberately does not switch any call site -- the generated code becomes available here, nothing
-// calls it yet. Each addition goes through the same import-safety check below before it can be
-// generated.
+// re-derived directly from the current source, not copied from any prior estimate. `momentum()`
+// is deliberately excluded: it has zero non-test callers and does not appear in the computed
+// closure -- see docs/phase-5-plan.md section 6.1, "momentum() stays excluded".
+// `computeConfirmedState` (the generic, non-chain-aware hysteresis helper) is also excluded:
+// `confirmedStateAt` no longer calls it (see CLAUDE.md's Momentum contracts section), so it is not
+// part of the real closure despite living in the same file. `countForDay`, `calendarStreakForHabit`,
+// `DayStatus`, `recentHistory`, and `calendarConsistency` (all `habit-stats.ts`) were kept through
+// Step 3 and Step 4 only because both Edge Functions' pre-Phase-5 `calendar*` prompt-building code
+// still called them directly at the time -- removed in the Step 5 Part 3 legacy-symbol cleanup
+// once that code was gone (docs/phase-5-plan.md section 6.3), since by then nothing in either
+// function's hand-maintained code or in the rest of this closure referenced them.
 const SOURCES = [
   { file: 'day-key.ts', names: ['dayKey', 'addDays', 'parseDayKeyParts', 'weekdayOf', 'localDayKeyOf', 'daysBetween'] },
   { file: 'schedule.ts', names: ['scheduleForDate', 'isScheduledOpportunity', 'scheduledOpportunitiesUpTo', 'scheduledOpportunitiesInWindow'] },
@@ -45,17 +49,7 @@ const SOURCES = [
   },
   {
     file: 'habit-stats.ts',
-    names: [
-      'logsForHabitOnDay',
-      'countForDay',
-      'isDoneOnDay',
-      'totalCompletions',
-      'calendarStreakForHabit',
-      'DayStatus',
-      'recentHistory',
-      'consistency',
-      'calendarConsistency',
-    ],
+    names: ['logsForHabitOnDay', 'isDoneOnDay', 'totalCompletions', 'consistency'],
   },
   {
     file: 'recovery.ts',
@@ -159,7 +153,7 @@ const SOURCES = [
     // are listed alongside buildFallbackProvider because its body calls them by name -- the
     // generator splices exactly the named declarations, not their transitive callees.
     file: 'coach-fallback.ts',
-    names: ['FALLBACK_MESSAGES', 'fnv1a32', 'selectFallbackIndex', 'buildFallbackProvider'],
+    names: ['FALLBACK_MESSAGES', 'fnv1a32', 'KIND_OFFSETS', 'selectFallbackIndex', 'buildFallbackProvider'],
   },
   {
     // Phase 5, Step 5 Part 3b: the lexical backstop, now called alongside validateCoachOutput at

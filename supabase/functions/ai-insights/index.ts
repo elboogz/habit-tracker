@@ -368,10 +368,6 @@ function logsForHabitOnDay(logs: HabitLog[], habitId: string, date: string): Hab
   return logs.filter((log) => log.habitId === habitId && log.date === date);
 }
 
-function countForDay(logs: HabitLog[], habitId: string, date: string): number {
-  return logsForHabitOnDay(logs, habitId, date).reduce((sum, log) => sum + log.count, 0);
-}
-
 /**
  * A reduced ("smaller version") completion counts fully as done for the day -- not partial
  * credit -- so every downstream consumer (streaks, consistency, recovery, momentum, challenge
@@ -394,44 +390,6 @@ function isDoneOnDay(habit: Habit, logs: HabitLog[], date: string): boolean {
  */
 function totalCompletions(habitId: string, logs: HabitLog[]): number {
   return logs.filter((log) => log.habitId === habitId).length;
-}
-
-/**
- * Calendar-day streak -- `streakForHabit`'s pre-Scheduled-Opportunity behavior, preserved verbatim
- * under an honest name. Exists only so scripts/build-edge-functions.js's generated block (see the
- * SOURCES list there) can keep inlining a function the two Edge Functions actually call (both
- * build a `streakDays` field for their coaching prompts) without silently changing their behavior:
- * neither Edge Function fetches habit_schedule_periods today, so they cannot call the
- * schedule-aware streakForHabit() above without a separate, deliberate change (the same Edge
- * Function integration gated in docs/phase-4-completion-report.md's Consistency entry). Not used
- * by any client screen -- every client call site reads the schedule-aware streakForHabit() instead.
- */
-function calendarStreakForHabit(habit: Habit, logs: HabitLog[], asOfDate: string = dayKey()): number {
-  let cursor = isDoneOnDay(habit, logs, asOfDate) ? asOfDate : addDays(asOfDate, -1);
-
-  let streak = 0;
-  while (isDoneOnDay(habit, logs, cursor)) {
-    streak += 1;
-    cursor = addDays(cursor, -1);
-  }
-  return streak;
-}
-
-type DayStatus = { date: string; done: boolean; count: number };
-
-/**
- * Most recent `days` days (oldest first) ending `asOfDate`, with completion status -- powers the
- * heatmap/bars. See streakForHabit's doc comment for why `asOfDate` is an explicit, defaulted
- * parameter rather than always "now".
- */
-function recentHistory(habit: Habit, logs: HabitLog[], days: number, asOfDate: string = dayKey()): DayStatus[] {
-  const result: DayStatus[] = [];
-  for (let i = days - 1; i >= 0; i -= 1) {
-    const date = addDays(asOfDate, -i);
-    const count = countForDay(logs, habit.id, date);
-    result.push({ date, count, done: isDoneOnDay(habit, logs, date) });
-  }
-  return result;
 }
 
 /**
@@ -459,23 +417,6 @@ function consistency(
   if (opportunities.length === 0) return null;
   const doneCount = opportunities.filter((date) => isDoneOnDay(habit, logs, date)).length;
   return doneCount / opportunities.length;
-}
-
-/**
- * Calendar-day consistency -- `consistency`'s pre-Scheduled-Opportunity behavior, preserved
- * verbatim under an honest name. Exists only so scripts/build-edge-functions.js's generated block
- * (see the SOURCES list there) can keep inlining a function the two Edge Functions actually call
- * (send-coaching-push's push eligibility, ai-insights' consistencyPct) without silently changing
- * their behavior: neither Edge Function fetches habit_schedule_periods today, so they cannot call
- * the schedule-aware consistency() above without a separate, deliberate change (extending the
- * generated-domain whitelist to include schedule.ts, plus a new DB read -- see the completion
- * report for the open questions that change is gated on). Not used by any client screen -- every
- * client call site reads the schedule-aware consistency() instead.
- */
-function calendarConsistency(habit: Habit, logs: HabitLog[], days: number, asOfDate: string = dayKey()): number {
-  const history = recentHistory(habit, logs, days, asOfDate);
-  const doneCount = history.filter((entry) => entry.done).length;
-  return history.length === 0 ? 0 : doneCount / history.length;
 }
 
 // -- from lib/domain/recovery.ts, do not hand-edit --
@@ -1722,21 +1663,41 @@ function fnv1a32(input: string): number {
   return hash >>> 0;
 }
 
-/** Deterministic index into `FALLBACK_MESSAGES` for a given account and day. */
-function selectFallbackIndex(userId: string, dayKey: string): number {
-  return fnv1a32(`${userId}|${dayKey}`) % FALLBACK_MESSAGES.length;
+/**
+ * Fixed, unique offset per `CoachFactsKind`, applied to the account/day base index (see the
+ * seed-resolution note above). Typed as `Record<CoachFactsKind, number>` deliberately: adding a
+ * fourth `CoachFactsKind` member without revisiting this map is a compile error, not a silent gap
+ * in the distinctness guarantee. `nudge: 0` is what makes `nudge`'s selection byte-identical to
+ * the original pre-amendment formula.
+ */
+const KIND_OFFSETS: Record<CoachFactsKind, number> = {
+  nudge: 0,
+  weekly: 1,
+  monthly: 2,
+};
+
+/**
+ * Deterministic index into `FALLBACK_MESSAGES` for a given account, day, and insight kind.
+ * `baseIndex` is exactly the original pre-amendment formula (`userId + dayKey`, hashed and
+ * reduced mod the message count); `kind` only ever contributes via `KIND_OFFSETS`'s fixed
+ * additive offset, never by entering the hash input.
+ */
+function selectFallbackIndex(userId: string, dayKey: string, kind: CoachFactsKind): number {
+  const baseIndex = fnv1a32(`${userId}|${dayKey}`) % FALLBACK_MESSAGES.length;
+  return (baseIndex + KIND_OFFSETS[kind]) % FALLBACK_MESSAGES.length;
 }
 
 /**
  * Builds a `FallbackProvider` (the boundary `coach-orchestration.ts` defines) closed over the
  * caller's `userId` and `today` day key -- see the seed-resolution note above for why both are
- * supplied here rather than read off `facts`/`kind`. The returned function ignores its own
- * `facts`/`kind` parameters: selection depends only on which account and which day this is, never
- * on the specific reason fallback fired, so the same account always sees the same message on a
- * given day regardless of which habits or kind triggered it.
+ * supplied here rather than read off `facts`/`kind`. The returned function still ignores its own
+ * `facts` parameter: which habits triggered fallback never affects selection. It no longer ignores
+ * `kind` (amended, see the seed-resolution note above): the same account and day now selects a
+ * guaranteed-distinct message per kind, so `nudge` and `weekly`/`monthly` can never show identical
+ * text when both fall back and are displayed together.
  */
 function buildFallbackProvider(userId: string, today: string): FallbackProvider {
-  return (_facts: CoachFacts, _kind: CoachFactsKind): string => FALLBACK_MESSAGES[selectFallbackIndex(userId, today)];
+  return (_facts: CoachFacts, kind: CoachFactsKind): string => FALLBACK_MESSAGES[selectFallbackIndex(userId, today, kind)];
 }
 
 // -- from lib/domain/coach-lexical-check.ts, do not hand-edit --
@@ -1795,7 +1756,7 @@ function combinedValidate(text: string, facts: CoachFacts): ValidationResult {
 //   file  -- fingerprints this whole file with only this line neutralized, so comparing it against
 //            the repository answers "is what's deployed current?"
 // See docs/phase-5-precondition-review.md, B6.
-const SOURCE_STAMP = { block: 'f69ccd51812b', file: '0c0ad2d65daf' };
+const SOURCE_STAMP = { block: '91808f504d92', file: '1000424b591c' };
 
 // The prompt asks Claude to avoid em dashes and emoji in the body, but it doesn't always comply.
 // This deterministically enforces both: dashes are replaced with commas/sentence breaks, and any

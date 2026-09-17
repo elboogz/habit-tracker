@@ -6,15 +6,31 @@
 // was excluded because even a history-neutral rewrite still implied a possible lapse through
 // implicature (recorded in full in the plan).
 //
-// Seed resolution [Ruled]. CLAUDE.md's variation-contract rule 2 specifies "habit id plus day
-// key" for a per-habit surface, where the entity being varied is the habit. This fallback is
-// account-level coaching output -- one message per coaching request, covering the whole habit set
+// Seed resolution [Ruled, amended -- docs/phase-5-plan.md section 6.5 "Cross-kind fallback
+// collision"]. CLAUDE.md's variation-contract rule 2 specifies "habit id plus day key" for a
+// per-habit surface, where the entity being varied is the habit. This fallback is account-level
+// coaching output -- one message per coaching request, covering the whole habit set
 // (`buildCoachFacts(habits: Habit[], ...)`), not a per-habit sentence -- so there is no canonical
-// habit id available when fallback fires. The seed resolves to the entity the output is actually
-// about: `userId + dayKey`. Neither value lives on `CoachFacts`, and `FallbackProvider`'s own
-// signature (`(facts, kind) => string`) deliberately doesn't carry them either, so both are
-// supplied to `buildFallbackProvider` at construction time via closure rather than widening
-// `CoachFacts` or the provider type.
+// habit id available when fallback fires. The original ruling resolved the base seed to `userId +
+// dayKey`, which remains correct and unchanged: it is still the sole account/day variation
+// mechanism, exactly as originally ruled. Live acceptance testing (2026-09-14) exposed a case that
+// ruling did not contemplate: `nudge` and `weekly`/`monthly` can both fall back for the same
+// account on the same day and be displayed together on one Progress screen. A first attempt mixed
+// `kind` directly into the hashed seed (`userId|dayKey|kind`); proven insufficient by direct
+// search against this implementation (52% cross-kind collision rate across 30,000 sampled
+// account/day pairs, matching the rate three independent draws into five buckets would produce --
+// hashing kind in only re-randomises the outcome, it does not decorrelate it). The corrected
+// design keeps the base hash exactly as originally ruled and adds a fixed, unique offset per
+// `kind` afterward (`KIND_OFFSETS` below) -- with `FALLBACK_MESSAGES.length` (5) at least the
+// number of `CoachFactsKind` values (3) and each kind's offset distinct modulo that length, the
+// three kinds' final indices are pairwise distinct for every possible base, unconditionally: a
+// proof, not a statistical property (see `coach-fallback.test.ts`'s exhaustive offset-invariant
+// tests, which check this directly rather than only sampling hash outputs). `nudge`'s offset is 0,
+// so its formula is byte-identical to the original pre-amendment ruling. The fixed relative
+// relationship this creates between kinds shown together (always `N`, `N+1`, `N+2` modulo 5 for
+// whatever `N` the day's hash produces) is consciously accepted: the message order is never shown
+// to a user, so this relationship has no realistic path to being perceived, and a second
+// permutation layer to also vary it would add real complexity for no observable benefit.
 import type { CoachFacts, CoachFactsKind } from './coach-facts';
 import type { FallbackProvider } from './coach-orchestration';
 
@@ -55,19 +71,39 @@ export function fnv1a32(input: string): number {
   return hash >>> 0;
 }
 
-/** Deterministic index into `FALLBACK_MESSAGES` for a given account and day. */
-export function selectFallbackIndex(userId: string, dayKey: string): number {
-  return fnv1a32(`${userId}|${dayKey}`) % FALLBACK_MESSAGES.length;
+/**
+ * Fixed, unique offset per `CoachFactsKind`, applied to the account/day base index (see the
+ * seed-resolution note above). Typed as `Record<CoachFactsKind, number>` deliberately: adding a
+ * fourth `CoachFactsKind` member without revisiting this map is a compile error, not a silent gap
+ * in the distinctness guarantee. `nudge: 0` is what makes `nudge`'s selection byte-identical to
+ * the original pre-amendment formula.
+ */
+export const KIND_OFFSETS: Record<CoachFactsKind, number> = {
+  nudge: 0,
+  weekly: 1,
+  monthly: 2,
+};
+
+/**
+ * Deterministic index into `FALLBACK_MESSAGES` for a given account, day, and insight kind.
+ * `baseIndex` is exactly the original pre-amendment formula (`userId + dayKey`, hashed and
+ * reduced mod the message count); `kind` only ever contributes via `KIND_OFFSETS`'s fixed
+ * additive offset, never by entering the hash input.
+ */
+export function selectFallbackIndex(userId: string, dayKey: string, kind: CoachFactsKind): number {
+  const baseIndex = fnv1a32(`${userId}|${dayKey}`) % FALLBACK_MESSAGES.length;
+  return (baseIndex + KIND_OFFSETS[kind]) % FALLBACK_MESSAGES.length;
 }
 
 /**
  * Builds a `FallbackProvider` (the boundary `coach-orchestration.ts` defines) closed over the
  * caller's `userId` and `today` day key -- see the seed-resolution note above for why both are
- * supplied here rather than read off `facts`/`kind`. The returned function ignores its own
- * `facts`/`kind` parameters: selection depends only on which account and which day this is, never
- * on the specific reason fallback fired, so the same account always sees the same message on a
- * given day regardless of which habits or kind triggered it.
+ * supplied here rather than read off `facts`/`kind`. The returned function still ignores its own
+ * `facts` parameter: which habits triggered fallback never affects selection. It no longer ignores
+ * `kind` (amended, see the seed-resolution note above): the same account and day now selects a
+ * guaranteed-distinct message per kind, so `nudge` and `weekly`/`monthly` can never show identical
+ * text when both fall back and are displayed together.
  */
 export function buildFallbackProvider(userId: string, today: string): FallbackProvider {
-  return (_facts: CoachFacts, _kind: CoachFactsKind): string => FALLBACK_MESSAGES[selectFallbackIndex(userId, today)];
+  return (_facts: CoachFacts, kind: CoachFactsKind): string => FALLBACK_MESSAGES[selectFallbackIndex(userId, today, kind)];
 }
