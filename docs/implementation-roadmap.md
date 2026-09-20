@@ -63,7 +63,7 @@ Additionally review:
 - The recovery celebration — does it register emotionally, or does it flash too quickly to land?
 - The Behaviour Snapshot — does the badge + sentence hierarchy scan correctly?
 - The morning-after experience — does a single miss produce near-total visual stability?
-- Habit Health — does the new signal surface clearly in Habit Detail?
+- Habit Health: does the coach communicate the signal clearly, and only when the deterministic domain verdict supports it?
 - The recovery flow — is returning after a lapse genuinely low-friction?
 - The AI coach — are nudges grounded and specific, or generic?
 
@@ -159,7 +159,7 @@ State-keyed copy variation
 Notification copy is written as templates keyed to behavioural state rather than per habit. Each
 behavioural state carries a set of interchangeable variants, and the notification path selects one deterministically. This gives notifications that stay fresh over months while remaining truthful about the user's actual behaviour, and it removes the need to author copy per habit.
 
-Prerequisites: the notification path must receive behavioural state as data, since the Edge Functions cannot reference `momentum.ts` or `recovery.ts` under the current generated-domain boundary. Every variant set is bound by the user-facing copy variation contract in `CLAUDE.md`.
+Prerequisites: the notification path (`lib/notifications.ts`'s local scheduling) must receive behavioural state as data — that wiring doesn't exist yet. (As of Phase 5 Step 3 the Edge Functions' generated-domain block does include `momentum.ts`/`recovery.ts`, since coaching is grounded in them; the earlier stated reason here, that they could not, was corrected once Step 3 shipped — see `CLAUDE.md`'s "Documentation reconciliation.") Every variant set is bound by the user-facing copy variation contract in `CLAUDE.md`.
 
 The equivalent variation on the Progress card is presentation-layer work and is not part of Phase 8. It can be done independently and earlier.
 

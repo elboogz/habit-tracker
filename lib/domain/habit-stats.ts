@@ -92,13 +92,14 @@ export function streakForHabit(
 
 /**
  * Calendar-day streak -- `streakForHabit`'s pre-Scheduled-Opportunity behavior, preserved verbatim
- * under an honest name. Exists only so scripts/build-edge-functions.js's generated block (see the
- * SOURCES list there) can keep inlining a function the two Edge Functions actually call (both
- * build a `streakDays` field for their coaching prompts) without silently changing their behavior:
- * neither Edge Function fetches habit_schedule_periods today, so they cannot call the
- * schedule-aware streakForHabit() above without a separate, deliberate change (the same Edge
- * Function integration gated in docs/phase-4-completion-report.md's Consistency entry). Not used
- * by any client screen -- every client call site reads the schedule-aware streakForHabit() instead.
+ * under an honest name. Originally kept only so the two Edge Functions' pre-Phase-5 `calendar*`
+ * prompt-building code could inline it without silently changing behavior, back when neither
+ * function fetched `habit_schedule_periods`. Both functions have fetched `habit_schedule_periods`
+ * since Phase 5 Step 4, and this symbol was removed from `scripts/build-edge-functions.js`'s
+ * `SOURCES` whitelist in the Step 5 Part 3 legacy-symbol cleanup (docs/phase-5-plan.md section
+ * 6.3) once neither function's hand-maintained code called it anymore. Not used by any client
+ * screen or Edge Function today -- every client call site reads the schedule-aware
+ * `streakForHabit()` instead; kept here for its own domain tests.
  */
 export function calendarStreakForHabit(habit: Habit, logs: HabitLog[], asOfDate: string = dayKey()): number {
   let cursor = isDoneOnDay(habit, logs, asOfDate) ? asOfDate : addDays(asOfDate, -1);
@@ -181,14 +182,15 @@ export function consistency(
 
 /**
  * Calendar-day consistency -- `consistency`'s pre-Scheduled-Opportunity behavior, preserved
- * verbatim under an honest name. Exists only so scripts/build-edge-functions.js's generated block
- * (see the SOURCES list there) can keep inlining a function the two Edge Functions actually call
- * (send-coaching-push's push eligibility, ai-insights' consistencyPct) without silently changing
- * their behavior: neither Edge Function fetches habit_schedule_periods today, so they cannot call
- * the schedule-aware consistency() above without a separate, deliberate change (extending the
- * generated-domain whitelist to include schedule.ts, plus a new DB read -- see the completion
- * report for the open questions that change is gated on). Not used by any client screen -- every
- * client call site reads the schedule-aware consistency() instead.
+ * verbatim under an honest name. Originally kept only so the two Edge Functions' pre-Phase-5
+ * `calendar*` prompt-building code could inline it without silently changing behavior, back when
+ * neither function fetched `habit_schedule_periods`. Both functions have fetched
+ * `habit_schedule_periods` since Phase 5 Step 4 (routed through the schedule-aware `consistency()`
+ * below, not this function), and this symbol was removed from `scripts/build-edge-functions.js`'s
+ * `SOURCES` whitelist in the Step 5 Part 3 legacy-symbol cleanup (docs/phase-5-plan.md section
+ * 6.3) once neither function's hand-maintained code called it anymore. Not used by any client
+ * screen or Edge Function today -- every client call site reads the schedule-aware `consistency()`
+ * instead; kept here for its own domain tests.
  */
 export function calendarConsistency(habit: Habit, logs: HabitLog[], days: number, asOfDate: string = dayKey()): number {
   const history = recentHistory(habit, logs, days, asOfDate);
