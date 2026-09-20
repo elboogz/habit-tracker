@@ -1112,7 +1112,6 @@ Named here so none is discovered by a tester.
 # 11. Debt register (Class B)
 
 - Exact generation-attempt counting for the rate limit would need a dedicated column; the sentinel row provides bounding, not precision.
-- `docs/implementation-roadmap.md:161`'s Phase 8 prerequisite becomes false after Step 3 (§12).
 - Habit Health has no in-app surface; adding one would be a specification amendment, not a Phase 5 gap.
 - `send-coaching-push`'s serial recipient loop (§5).
 

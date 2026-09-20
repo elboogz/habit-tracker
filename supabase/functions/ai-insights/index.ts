@@ -1756,7 +1756,7 @@ function combinedValidate(text: string, facts: CoachFacts): ValidationResult {
 //   file  -- fingerprints this whole file with only this line neutralized, so comparing it against
 //            the repository answers "is what's deployed current?"
 // See docs/phase-5-precondition-review.md, B6.
-const SOURCE_STAMP = { block: '91808f504d92', file: '1000424b591c' };
+const SOURCE_STAMP = { block: '91808f504d92', file: 'c76db5323f57' };
 
 // The prompt asks Claude to avoid em dashes and emoji in the body, but it doesn't always comply.
 // This deterministically enforces both: dashes are replaced with commas/sentence breaks, and any
@@ -2045,7 +2045,7 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    const { kind: kindRaw, diagnostic } = body as Record<string, unknown>;
+    const { kind: kindRaw } = body as Record<string, unknown>;
     if (typeof kindRaw !== 'string' || !(kindRaw in KIND_CONFIG)) {
       return new Response(JSON.stringify({ error: 'Invalid kind' }), {
         status: 400,
@@ -2078,40 +2078,6 @@ Deno.serve(async (req) => {
     }
     const userId = userData.user.id;
     const today = dayKey(new Date());
-
-    // Phase 5, Step 4 Part 2 (docs/phase-5-plan.md section 6.2): an authenticated POST-body
-    // diagnostic flag, not a new GET route (method ruled 2026-09-11) -- reuses this exact
-    // authentication path unchanged, with no new routing mechanic. Returns before the freshness
-    // check, before the rate-limit count, before Anthropic, and before any ai_insights write, so
-    // it performs its own reads rather than the main path's later ones (RLS already scopes every
-    // read here to this user). Reports the real CoachFacts -- habit ids only, never names;
-    // CoachFacts carries no name field at all -- and the real hasGroundedInsight result. It does
-    // not report which of §6.7's three branches (grounded / deterministic fallback / validator-
-    // suppressed) would fire: neither fallback nor the validator is wired into generation until
-    // Step 5, so there is no real branch to observe yet, and none is fabricated here. Removable in
-    // one edit (this whole block), with the removal visible in this file's own SOURCE_STAMP.
-    if (diagnostic === true) {
-      const [{ data: diagHabits }, { data: diagLogs }, { data: diagPeriods }, { data: diagLapses }] = await Promise.all([
-        supabase.from('habits').select('id, name, emoji, type, target_count, created_at').is('deleted_at', null),
-        supabase.from('habit_logs').select('habit_id, date, count, reduced'),
-        supabase.from('habit_schedule_periods').select('id, habit_id, effective_from, days_of_week, paused, created_at'),
-        supabase.from('lapse_reasons').select('habit_id, created_at, reason'),
-      ]);
-
-      const diagFacts = buildCoachFacts(
-        ((diagHabits ?? []) as HabitRow[]).map(toDomainHabit),
-        toDomainLogs((diagLogs ?? []) as LogRow[]),
-        ((diagPeriods ?? []) as HabitSchedulePeriodRow[]).map(toDomainSchedulePeriod),
-        ((diagLapses ?? []) as LapseReasonRow[]).map(toDomainLapseReason),
-        today,
-        kind,
-      );
-
-      return new Response(
-        JSON.stringify({ facts: diagFacts, hasGroundedInsight: hasGroundedInsight(diagFacts), stamp: SOURCE_STAMP }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
-    }
 
     const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY') });
     const { status, body: responseBody } = await generateInsight(supabase, anthropic, userId, kind, config, today);
