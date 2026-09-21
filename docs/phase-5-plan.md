@@ -977,6 +977,8 @@ A checked-in claim that the diagnostic was removed is explicitly **not** proof. 
 
 **Hard downstream gate. [Ruled]** **Phase 6 does not begin while the diagnostic branch is still deployed.** This is a Phase 6 entry precondition, and the proof above is what satisfies it. If the Acceptance Gate closes and the diagnostic has not been removed and verified, Phase 6 is blocked — not delayed by convention, blocked by a precondition, in the same way Phase 5's own preconditions blocked it.
 
+**Satisfied, 2026-09-21.** The diagnostic branch was removed from `supabase/functions/ai-insights/index.ts` (repository commit `857a109`) and pasted alone, under the §2/§6.8 single-function exception. Proof obtained via the same live-stamp comparison this condition requires, each value tool-confirmed rather than manually compared: live `ai-insights` `file` stamp `c76db5323f57`, matching the post-removal repository value; live `send-coaching-push` `file` stamp `038b4436b4ea`, matching its (unchanged) repository value; both live `block` values `91808f504d92`, equal to each other. `send-coaching-push` was verified live but was not re-pasted — its source is byte-identical to what was already deployed. **The removal condition is fully satisfied. The Phase 6 entry gate is open.**
+
 ---
 
 ## 6.8 Post-cutover CORS incident and fix **[New]**
@@ -1137,6 +1139,8 @@ Phase 5 can close with the diagnostic branch still deployed — that is the poin
 > **Phase 6 entry precondition: Phase 6 does not begin while the fact-inspection diagnostic branch is still deployed.**
 
 Trigger, verification step and proof are in §6.7's "The removal condition, named". Proof is the live-versus-repository `file` stamp comparison on both functions, never a checked-in assertion that removal happened.
+
+**Discharged, 2026-09-21.** See §6.7, "Satisfied, 2026-09-21," for the live proof. This obligation is closed.
 
 ## Documentation reconciliation **[Ruled]**
 
