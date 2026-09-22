@@ -44,6 +44,32 @@ export const BADGE_ACCENTS = {
   dark: ['#2E3B4A', '#4A3B32', '#3A4536', '#4A4230'],
 };
 
+// Product Polish Step 3: derived from the values already repeated across the app's touched
+// screens (see docs/implementation-roadmap.md's Product Polish plan) -- not a theoretical
+// scale chosen up front. Values that appeared only once, or that appeared more than once
+// with no consistent role, were left as literals rather than folded in here.
+export const Spacing = {
+  micro: 2, // label/value text-stack gap
+  xs: 4, // tightest general gap
+  compact: 6, // form-field-group stack gap
+  sm: 8, // base unit -- the app's default gap
+  md: 12, // input/chip/segment/tap-target padding
+  row: 14, // list-row/secondary-panel/secondary-button padding
+  lg: 16, // primary button/card padding, section top padding
+  section: 20, // top-level content-column gap between sections
+  screen: 24, // screen-edge gutter, card/section padding
+  scrollEnd: 40, // bottom scroll-content padding
+};
+
+// Product Polish Step 3: same derivation as Spacing above. `row` intentionally shares its
+// value with Spacing.row -- both come from the same list-row/secondary-panel component family.
+export const Radius = {
+  sm: 6, // small controls (checkbox)
+  md: 12, // medium controls (inputs, chips, segments, tap targets)
+  row: 14, // list rows, secondary panels/buttons
+  lg: 16, // cards, primary buttons
+};
+
 export const Fonts = Platform.select({
   ios: {
     /** iOS `UIFontDescriptorSystemDesignDefault` */

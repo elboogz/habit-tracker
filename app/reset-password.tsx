@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/lib/auth-store';
 import { alertMessage } from '@/lib/confirm';
@@ -87,7 +87,7 @@ export default function ResetPasswordScreen() {
         <ThemedView style={styles.content}>
           {!verified ? (
             <>
-              <ThemedView style={{ gap: 6 }}>
+              <ThemedView style={{ gap: Spacing.compact }}>
                 <ThemedText type="display">Enter your reset code</ThemedText>
                 <ThemedText style={{ color: colors.icon }}>
                   We emailed a code to the address below. Enter it to continue.
@@ -143,7 +143,7 @@ export default function ResetPasswordScreen() {
             </>
           ) : (
             <>
-              <ThemedView style={{ gap: 6 }}>
+              <ThemedView style={{ gap: Spacing.compact }}>
                 <ThemedText type="display">Set a new password</ThemedText>
                 <ThemedText style={{ color: colors.icon }}>Choose a new password for your account.</ThemedText>
               </ThemedView>
@@ -207,29 +207,29 @@ export default function ResetPasswordScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { flex: 1, padding: 24 },
+  safeArea: { flex: 1, padding: Spacing.screen },
   content: {
     flex: 1,
     justifyContent: 'center',
-    gap: 20,
+    gap: Spacing.section,
   },
   section: {
-    gap: 8,
+    gap: Spacing.sm,
   },
   input: {
     fontSize: 16,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.row,
+    paddingVertical: Spacing.md,
   },
   primaryButton: {
-    paddingVertical: 16,
-    borderRadius: 16,
+    paddingVertical: Spacing.lg,
+    borderRadius: Radius.lg,
     alignItems: 'center',
   },
   cancelButton: {
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: Spacing.sm,
   },
 });

@@ -9,7 +9,7 @@ import { ScheduleDaysEditor } from '@/components/schedule-days-editor';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { alertMessage, confirmAction } from '@/lib/confirm';
 import { scheduleForDate } from '@/lib/domain/schedule';
@@ -285,50 +285,50 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
   content: {
-    padding: 24,
+    padding: Spacing.screen,
     gap: 22,
   },
   section: {
-    gap: 8,
+    gap: Spacing.sm,
   },
   input: {
     fontSize: 16,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.row,
+    paddingVertical: Spacing.md,
   },
   emojiRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: Spacing.sm,
   },
   emojiChip: {
-    borderRadius: 12,
+    borderRadius: Radius.md,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
   segmented: {
     flexDirection: 'row',
-    gap: 8,
+    gap: Spacing.sm,
   },
   segment: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: Spacing.md,
+    borderRadius: Radius.md,
     borderWidth: 1.5,
   },
   stepperRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: Spacing.lg,
   },
   stepperButton: {
     width: 44,
     height: 44,
-    borderRadius: 12,
+    borderRadius: Radius.md,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
@@ -338,15 +338,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   saveButton: {
-    paddingVertical: 16,
-    borderRadius: 16,
+    paddingVertical: Spacing.lg,
+    borderRadius: Radius.lg,
     alignItems: 'center',
   },
   deleteButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 12,
+    gap: Spacing.sm,
+    paddingVertical: Spacing.md,
   },
 });

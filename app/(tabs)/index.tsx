@@ -7,7 +7,7 @@ import { RecoveryCard } from '@/components/recovery-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { isRecoveryEvent, lapseReasonSuppressionUntil, openLapse } from '@/lib/domain/recovery';
 import { isScheduledOpportunity, nextScheduledOpportunityAfter } from '@/lib/domain/schedule';
@@ -287,7 +287,7 @@ export default function TodayScreen() {
           />
 
           {activeChallenges.length > 0 && (
-            <ThemedView style={{ gap: 8 }}>
+            <ThemedView style={{ gap: Spacing.sm }}>
               {activeChallenges.map((challenge) => {
                 const progress = challengeProgress(challenge, habits, logs, schedulePeriods);
                 if (progress.habits.length === 0) return null;
@@ -402,35 +402,35 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 40,
-    gap: 20,
+    paddingHorizontal: Spacing.screen,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.scrollEnd,
+    gap: Spacing.section,
   },
   header: {
-    gap: 4,
+    gap: Spacing.xs,
   },
   challengeBanner: {
-    gap: 4,
-    padding: 16,
-    borderRadius: 16,
+    gap: Spacing.xs,
+    padding: Spacing.lg,
+    borderRadius: Radius.lg,
     borderWidth: 1.5,
   },
   list: {
-    gap: 8,
+    gap: Spacing.sm,
   },
   habitRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    padding: 14,
-    borderRadius: 16,
+    gap: Spacing.row,
+    padding: Spacing.row,
+    borderRadius: Radius.lg,
     borderWidth: 1,
   },
   checkbox: {
     width: 44,
     height: 44,
-    borderRadius: 12,
+    borderRadius: Radius.md,
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
@@ -438,7 +438,7 @@ const styles = StyleSheet.create({
   countStepper: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: Spacing.compact,
   },
   miniStepperButton: {
     width: 30,
@@ -450,14 +450,14 @@ const styles = StyleSheet.create({
   },
   habitInfo: {
     flex: 1,
-    gap: 2,
+    gap: Spacing.micro,
   },
   addButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 16,
+    gap: Spacing.sm,
+    paddingVertical: Spacing.row,
+    borderRadius: Radius.lg,
   },
 });

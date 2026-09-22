@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { alertMessage } from '@/lib/confirm';
 import { useAuth } from '@/lib/auth-store';
@@ -70,7 +70,7 @@ export default function SignInScreen() {
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         <ThemedView style={styles.content}>
-          <ThemedView style={{ gap: 6 }}>
+          <ThemedView style={{ gap: Spacing.compact }}>
             <ThemedText type="display">{isSignUp ? 'Create an account' : 'Welcome back'}</ThemedText>
             <ThemedText style={{ color: colors.icon }}>
               {isSignUp
@@ -148,30 +148,30 @@ export default function SignInScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { flex: 1, padding: 24 },
+  safeArea: { flex: 1, padding: Spacing.screen },
   content: {
     flex: 1,
     justifyContent: 'center',
-    gap: 20,
+    gap: Spacing.section,
   },
   section: {
-    gap: 8,
+    gap: Spacing.sm,
   },
   input: {
     fontSize: 16,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.row,
+    paddingVertical: Spacing.md,
   },
   primaryButton: {
-    paddingVertical: 16,
-    borderRadius: 16,
+    paddingVertical: Spacing.lg,
+    borderRadius: Radius.lg,
     alignItems: 'center',
   },
   switchModeButton: {
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: Spacing.sm,
   },
   forgotPasswordButton: {
     alignItems: 'flex-end',

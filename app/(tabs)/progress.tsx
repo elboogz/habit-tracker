@@ -7,7 +7,7 @@ import { HabitHeatmap } from '@/components/habit-heatmap';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getInsight, type Insight, type InsightKind } from '@/lib/ai-coach';
 import { confirmedStateAt, type MomentumStateKey } from '@/lib/domain/momentum';
@@ -113,7 +113,7 @@ function HabitSnapshot({
   const recoveryLine = recoveryRateLine(rate.rolling, recoveryCount);
 
   return (
-    <ThemedView style={{ gap: 6 }}>
+    <ThemedView style={{ gap: Spacing.compact }}>
       <ThemedView style={styles.momentumRow}>
         <ThemedView style={[styles.momentumBadge, { borderColor: colors.tint }]}>
           <ThemedText style={{ color: colors.tint, fontSize: 13, fontWeight: '700' }}>{copy.badge}</ThemedText>
@@ -220,7 +220,7 @@ export default function ProgressScreen() {
           </ThemedView>
 
           {hasHabits && (
-            <ThemedView style={{ gap: 4 }}>
+            <ThemedView style={{ gap: Spacing.xs }}>
               <ThemedText type="defaultSemiBold" style={{ fontSize: 15 }}>
                 {aggregateTotalCompletions} completions logged so far
               </ThemedText>
@@ -389,28 +389,28 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
   content: {
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 40,
-    gap: 20,
+    paddingHorizontal: Spacing.screen,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.scrollEnd,
+    gap: Spacing.section,
   },
   header: {
-    gap: 4,
+    gap: Spacing.xs,
   },
   momentumRow: {
     flexDirection: 'row',
   },
   momentumBadge: {
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: Spacing.xs,
     borderRadius: 999,
     borderWidth: 1.5,
     alignSelf: 'flex-start',
   },
   coachCard: {
-    gap: 12,
-    padding: 16,
-    borderRadius: 16,
+    gap: Spacing.md,
+    padding: Spacing.lg,
+    borderRadius: Radius.lg,
     borderWidth: 1.5,
   },
   coachHeader: {
@@ -420,29 +420,29 @@ const styles = StyleSheet.create({
   coachLoading: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: Spacing.sm,
   },
   coachDivider: {
     borderBottomWidth: 1,
   },
   segmented: {
     flexDirection: 'row',
-    gap: 8,
+    gap: Spacing.sm,
   },
   segment: {
     flex: 1,
     alignItems: 'center',
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: Radius.md,
     borderWidth: 1.5,
   },
   list: {
-    gap: 12,
+    gap: Spacing.md,
   },
   card: {
-    gap: 12,
-    padding: 16,
-    borderRadius: 16,
+    gap: Spacing.md,
+    padding: Spacing.lg,
+    borderRadius: Radius.lg,
     borderWidth: 1,
   },
   cardHeader: {
@@ -452,9 +452,9 @@ const styles = StyleSheet.create({
   },
   emptyState: {
     alignItems: 'center',
-    gap: 8,
+    gap: Spacing.sm,
     padding: 28,
-    borderRadius: 16,
+    borderRadius: Radius.lg,
     borderWidth: 1,
     borderStyle: 'dashed',
   },

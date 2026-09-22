@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { addDays, challengeProgress, type ChallengeProgress } from '@/lib/habit-stats';
 import { useHabitStore } from '@/lib/habit-store';
@@ -63,7 +63,7 @@ export default function ChallengesScreen() {
           {activeChallenges.length > 0 && (
             <ThemedView style={styles.section}>
               <ThemedText type="defaultSemiBold">Active</ThemedText>
-              <ThemedView style={{ gap: 12 }}>
+              <ThemedView style={{ gap: Spacing.md }}>
                 {activeChallenges.map((challenge) => {
                   const progress = challengeProgress(challenge, habits, logs, schedulePeriods);
                   if (progress.habits.length === 0) return null;
@@ -102,7 +102,7 @@ export default function ChallengesScreen() {
             ) : (
               <>
                 <ThemedText style={{ color: colors.icon, fontSize: 13 }}>Choose the habits to include</ThemedText>
-                <ThemedView style={{ gap: 8 }}>
+                <ThemedView style={{ gap: Spacing.sm }}>
                   {pickableHabits.map((habit) => {
                     const selected = selectedIds.includes(habit.id);
                     return (
@@ -174,7 +174,7 @@ export default function ChallengesScreen() {
           {past.length > 0 && (
             <ThemedView style={styles.section}>
               <ThemedText type="defaultSemiBold">Past challenges</ThemedText>
-              <ThemedView style={{ gap: 8 }}>
+              <ThemedView style={{ gap: Spacing.sm }}>
                 {past.map((challenge) => {
                   const challengeHabits = habits.filter((habit) => challenge.habitIds.includes(habit.id));
                   if (challengeHabits.length === 0) return null;
@@ -182,7 +182,7 @@ export default function ChallengesScreen() {
                   const endDate = formatChallengeDate(endDateKey);
                   return (
                     <ThemedView key={challenge.id} style={[styles.pastRow, { borderColor: colors.icon }]}>
-                      <ThemedView style={{ flex: 1, gap: 2 }}>
+                      <ThemedView style={{ flex: 1, gap: Spacing.micro }}>
                         <ThemedText>
                           {challengeHabits.map((h) => h.emoji).join(' ')}{' '}
                           {challengeHabits.map((h) => h.name).join(', ')}
@@ -257,28 +257,28 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
   content: {
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 40,
-    gap: 24,
+    paddingHorizontal: Spacing.screen,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.scrollEnd,
+    gap: Spacing.screen,
   },
   header: {
-    gap: 4,
+    gap: Spacing.xs,
   },
   section: {
-    gap: 12,
+    gap: Spacing.md,
   },
   activeCard: {
-    gap: 8,
-    padding: 16,
-    borderRadius: 16,
+    gap: Spacing.sm,
+    padding: Spacing.lg,
+    borderRadius: Radius.lg,
     borderWidth: 1.5,
   },
   dotRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 4,
+    gap: Spacing.sm,
+    marginTop: Spacing.xs,
   },
   dot: {
     width: 28,
@@ -292,14 +292,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 14,
-    borderRadius: 14,
+    padding: Spacing.row,
+    borderRadius: Radius.row,
     borderWidth: 1.5,
   },
   checkbox: {
     width: 24,
     height: 24,
-    borderRadius: 6,
+    borderRadius: Radius.sm,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
@@ -307,27 +307,27 @@ const styles = StyleSheet.create({
   durationRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: Spacing.sm,
   },
   durationChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 12,
+    paddingHorizontal: Spacing.row,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.md,
     borderWidth: 1.5,
   },
   startButton: {
     alignItems: 'center',
-    paddingVertical: 16,
-    borderRadius: 16,
-    marginTop: 4,
+    paddingVertical: Spacing.lg,
+    borderRadius: Radius.lg,
+    marginTop: Spacing.xs,
   },
   pastRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 14,
-    borderRadius: 14,
+    padding: Spacing.row,
+    borderRadius: Radius.row,
     borderWidth: 1,
-    gap: 8,
+    gap: Spacing.sm,
   },
 });

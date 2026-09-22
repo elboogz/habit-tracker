@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useHabitStore } from '@/lib/habit-store';
 import { ensureNotificationPermission } from '@/lib/notifications';
@@ -126,7 +126,7 @@ export default function OnboardingScreen() {
 
         {step === 2 && (
           <ThemedView style={styles.stepBody}>
-            <ThemedView style={{ gap: 6 }}>
+            <ThemedView style={{ gap: Spacing.compact }}>
               <ThemedText type="display">Pick your habits</ThemedText>
               <ThemedText style={{ color: colors.icon }}>
                 Choose one or more to start with. You can always add more later.
@@ -205,14 +205,14 @@ export default function OnboardingScreen() {
 
         {step === 4 && (
           <ThemedView style={styles.stepBody}>
-            <ThemedView style={{ gap: 6 }}>
+            <ThemedView style={{ gap: Spacing.compact }}>
               <ThemedText type="display">Stay on track</ThemedText>
               <ThemedText style={{ color: colors.icon }}>
                 A daily nudge around 9:00 AM helps the habit stick, especially for the next three days. You can
                 change this anytime in Settings.
               </ThemedText>
             </ThemedView>
-            <ThemedView style={{ marginTop: 'auto', gap: 12 }}>
+            <ThemedView style={{ marginTop: 'auto', gap: Spacing.md }}>
               <PrimaryButton label="Enable daily reminders" onPress={handleEnableReminders} colors={colors} disabled={busy} />
               <Pressable
                 onPress={() => finish(false)}
@@ -242,7 +242,7 @@ function FeatureRow({
   return (
     <ThemedView style={styles.featureRow}>
       <ThemedText style={{ fontSize: 28, lineHeight: 40 }}>{emoji}</ThemedText>
-      <ThemedView style={{ flex: 1, gap: 2 }}>
+      <ThemedView style={{ flex: 1, gap: Spacing.micro }}>
         <ThemedText type="defaultSemiBold">{title}</ThemedText>
         <ThemedText style={{ color: colors.icon, fontSize: 14, lineHeight: 19 }}>{body}</ThemedText>
       </ThemedView>
@@ -267,7 +267,7 @@ function Step({
 }) {
   return (
     <ThemedView style={styles.stepBody}>
-      <ThemedView style={{ flex: 1, justifyContent: 'center', gap: 16 }}>
+      <ThemedView style={{ flex: 1, justifyContent: 'center', gap: Spacing.lg }}>
         <ThemedText style={{ fontSize: 56, lineHeight: 80 }}>{emoji}</ThemedText>
         <ThemedText type="display">{title}</ThemedText>
         <ThemedText style={{ color: colors.icon, fontSize: 16, lineHeight: 22 }}>{body}</ThemedText>
@@ -304,10 +304,10 @@ function PrimaryButton({
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  safeArea: { flex: 1, padding: 24 },
+  safeArea: { flex: 1, padding: Spacing.screen },
   stepBody: {
     flex: 1,
-    gap: 20,
+    gap: Spacing.section,
   },
   choices: {
     gap: 10,
@@ -315,20 +315,20 @@ const styles = StyleSheet.create({
   featureRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 14,
+    gap: Spacing.row,
   },
   choiceRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    padding: 14,
-    borderRadius: 14,
+    gap: Spacing.md,
+    padding: Spacing.row,
+    borderRadius: Radius.row,
     borderWidth: 1.5,
   },
   checkbox: {
     width: 24,
     height: 24,
-    borderRadius: 6,
+    borderRadius: Radius.sm,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
@@ -336,15 +336,15 @@ const styles = StyleSheet.create({
   customInput: {
     flex: 1,
     fontSize: 16,
-    paddingVertical: 4,
+    paddingVertical: Spacing.xs,
   },
   primaryButton: {
-    paddingVertical: 16,
-    borderRadius: 16,
+    paddingVertical: Spacing.lg,
+    borderRadius: Radius.lg,
     alignItems: 'center',
   },
   skipButton: {
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: Spacing.sm,
   },
 });

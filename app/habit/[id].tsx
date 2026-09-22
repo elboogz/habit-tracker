@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { HabitCalendar } from '@/components/habit-calendar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { confirmAction } from '@/lib/confirm';
 import { averageRecoveryTime, recoveryRate } from '@/lib/domain/recovery';
@@ -178,7 +178,7 @@ export default function HabitDetailScreen() {
             {recentLogs.length === 0 ? (
               <ThemedText style={{ color: colors.icon }}>Nothing logged yet. Get started on the Today tab.</ThemedText>
             ) : (
-              <ThemedView style={{ gap: 8 }}>
+              <ThemedView style={{ gap: Spacing.sm }}>
                 {recentLogs.map((log) => (
                   <ThemedView key={log.id} style={[styles.logRow, { borderColor: colors.icon }]}>
                     <ThemedText>{formatLogDate(log.date)}</ThemedText>
@@ -316,17 +316,17 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   content: {
-    padding: 24,
-    gap: 24,
+    padding: Spacing.screen,
+    gap: Spacing.screen,
   },
   header: {
-    gap: 4,
+    gap: Spacing.xs,
   },
   totalCard: {
     alignItems: 'center',
-    gap: 4,
-    paddingVertical: 24,
-    borderRadius: 16,
+    gap: Spacing.xs,
+    paddingVertical: Spacing.screen,
+    borderRadius: Radius.lg,
     borderWidth: 1,
   },
   totalEmoji: {
@@ -335,54 +335,54 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: Spacing.md,
   },
   statCard: {
     flexBasis: '47%',
     flexGrow: 1,
     alignItems: 'center',
-    gap: 2,
-    paddingVertical: 16,
-    borderRadius: 16,
+    gap: Spacing.micro,
+    paddingVertical: Spacing.lg,
+    borderRadius: Radius.lg,
     borderWidth: 1,
   },
   statEmoji: {
     fontSize: 20,
   },
   section: {
-    gap: 12,
+    gap: Spacing.md,
   },
   logRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 12,
-    borderRadius: 12,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
     borderWidth: 1,
   },
   editButton: {
     alignItems: 'center',
-    paddingVertical: 14,
-    borderRadius: 16,
+    paddingVertical: Spacing.row,
+    borderRadius: Radius.lg,
     borderWidth: 1.5,
   },
   correctionPanel: {
     gap: 10,
-    padding: 14,
-    borderRadius: 14,
+    padding: Spacing.row,
+    borderRadius: Radius.row,
     borderWidth: 1.5,
     alignItems: 'center',
   },
   correctionToggle: {
     paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 12,
+    paddingHorizontal: Spacing.section,
+    borderRadius: Radius.md,
     borderWidth: 1.5,
   },
   countStepperRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: Spacing.lg,
   },
   stepperButton: {
     width: 40,

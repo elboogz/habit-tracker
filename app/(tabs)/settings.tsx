@@ -6,7 +6,7 @@ import { CelebrationOverlay } from '@/components/celebration-overlay';
 import { ReminderTimesEditor, Stepper } from '@/components/reminder-times-editor';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getInsight, type InsightKind, regenerateInsight } from '@/lib/ai-coach';
 import { useAuth } from '@/lib/auth-store';
@@ -267,7 +267,7 @@ export default function SettingsScreen() {
           <ThemedView style={styles.section}>
             <ThemedText type="defaultSemiBold">Account</ThemedText>
             <ThemedView style={[styles.row, { borderColor: colors.icon }]}>
-              <ThemedView style={{ flex: 1, gap: 2 }}>
+              <ThemedView style={{ flex: 1, gap: Spacing.micro }}>
                 <ThemedText type="defaultSemiBold">Signed in</ThemedText>
                 <ThemedText style={{ color: colors.icon, fontSize: 13 }}>{user?.email}</ThemedText>
               </ThemedView>
@@ -280,7 +280,7 @@ export default function SettingsScreen() {
           <ThemedView style={styles.section}>
             <ThemedText type="defaultSemiBold">Daily check-ins</ThemedText>
             <ThemedView style={[styles.row, { borderColor: colors.icon }]}>
-              <ThemedView style={{ flex: 1, gap: 2 }}>
+              <ThemedView style={{ flex: 1, gap: Spacing.micro }}>
                 <ThemedText type="defaultSemiBold">Reminders</ThemedText>
                 <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
                   A friendly nudge to log your habits and keep your streaks alive.
@@ -296,7 +296,7 @@ export default function SettingsScreen() {
             </ThemedView>
 
             {enabled && (
-              <ThemedView style={{ gap: 8 }}>
+              <ThemedView style={{ gap: Spacing.sm }}>
                 <ThemedText style={{ color: colors.icon, fontSize: 13 }}>Reminder times</ThemedText>
                 <ReminderTimesEditor times={times} onChange={updateTimes} />
               </ThemedView>
@@ -317,7 +317,7 @@ export default function SettingsScreen() {
           <ThemedView style={styles.section}>
             <ThemedText type="defaultSemiBold">AI Coach</ThemedText>
             <ThemedView style={[styles.row, { borderColor: colors.icon }]}>
-              <ThemedView style={{ flex: 1, gap: 2 }}>
+              <ThemedView style={{ flex: 1, gap: Spacing.micro }}>
                 <ThemedText type="defaultSemiBold">Daily coaching nudge</ThemedText>
                 <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
                   A personalized push from your AI coach, based on your recent habits — sent even when the app
@@ -341,7 +341,7 @@ export default function SettingsScreen() {
             )}
 
             {coachPushEnabled && (
-              <ThemedView style={{ gap: 8 }}>
+              <ThemedView style={{ gap: Spacing.sm }}>
                 <ThemedText style={{ color: colors.icon, fontSize: 13 }}>Notification time</ThemedText>
                 <ThemedView style={styles.pickerRow}>
                   <Stepper
@@ -371,7 +371,7 @@ export default function SettingsScreen() {
           <ThemedView style={styles.section}>
             <ThemedText type="defaultSemiBold">Sound effects</ThemedText>
             <ThemedView style={[styles.row, { borderColor: colors.icon }]}>
-              <ThemedView style={{ flex: 1, gap: 2 }}>
+              <ThemedView style={{ flex: 1, gap: Spacing.micro }}>
                 <ThemedText type="defaultSemiBold">Celebration chime</ThemedText>
                 <ThemedText style={{ color: colors.icon, fontSize: 13 }}>
                   Plays a sound when you log a habit or complete a challenge.
@@ -404,7 +404,7 @@ export default function SettingsScreen() {
               </ThemedText>
 
               {activeChallenges.length > 0 && (
-                <ThemedView style={{ gap: 8 }}>
+                <ThemedView style={{ gap: Spacing.sm }}>
                   <ThemedText style={{ fontSize: 13, fontWeight: '600' }}>Active challenges</ThemedText>
                   {activeChallenges.map((challenge) => {
                     const progress = challengeProgress(challenge, state.habits, state.logs, state.schedulePeriods);
@@ -412,7 +412,7 @@ export default function SettingsScreen() {
                     const atFinalDay = progress.daysElapsed >= progress.totalDays;
                     return (
                       <ThemedView key={challenge.id} style={[styles.devRow, { borderColor: colors.icon }]}>
-                        <ThemedView style={{ flex: 1, gap: 2 }}>
+                        <ThemedView style={{ flex: 1, gap: Spacing.micro }}>
                           <ThemedText>
                             {progress.habits.map((h) => h.emoji).join(' ')}{' '}
                             {progress.habits.map((h) => h.name).join(', ')}
@@ -421,7 +421,7 @@ export default function SettingsScreen() {
                             Day {progress.daysElapsed} of {progress.totalDays}
                           </ThemedText>
                         </ThemedView>
-                        <ThemedView style={{ gap: 8 }}>
+                        <ThemedView style={{ gap: Spacing.sm }}>
                           <Pressable
                             disabled={atFinalDay}
                             onPress={() => debugAdvanceChallenge(challenge.id)}
@@ -451,7 +451,7 @@ export default function SettingsScreen() {
               )}
 
               {state.habits.length > 0 && (
-                <ThemedView style={{ gap: 8 }}>
+                <ThemedView style={{ gap: Spacing.sm }}>
                   <ThemedText style={{ fontSize: 13, fontWeight: '600' }}>Simulate a streak</ThemedText>
                   {state.habits.map((habit) => {
                     const done = simulatedIds.has(habit.id);
@@ -483,7 +483,7 @@ export default function SettingsScreen() {
               )}
 
               {state.habits.length > 0 && (
-                <ThemedView style={{ gap: 8 }}>
+                <ThemedView style={{ gap: Spacing.sm }}>
                   <ThemedText style={{ fontSize: 13, fontWeight: '600' }}>Simulate a scenario</ThemedText>
                   {state.habits.map((habit) => (
                     <ThemedView
@@ -492,7 +492,7 @@ export default function SettingsScreen() {
                       <ThemedText>
                         {habit.emoji} {habit.name}
                       </ThemedText>
-                      <ThemedView style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                      <ThemedView style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.compact, marginTop: Spacing.sm }}>
                         {SCENARIO_META.map(({ key, label }) => {
                           const applied = appliedScenario?.habitId === habit.id && appliedScenario.scenario === key;
                           return (
@@ -501,7 +501,7 @@ export default function SettingsScreen() {
                               onPress={() => handleSimulateScenario(habit.id, key)}
                               style={[
                                 styles.devButton,
-                                { borderColor: colors.tint, paddingHorizontal: 10, paddingVertical: 6 },
+                                { borderColor: colors.tint, paddingHorizontal: 10, paddingVertical: Spacing.compact },
                                 applied && { backgroundColor: colors.tint },
                               ]}>
                               <ThemedText style={{ color: applied ? colors.background : colors.tint, fontWeight: '600', fontSize: 12 }}>
@@ -529,9 +529,9 @@ export default function SettingsScreen() {
               )}
 
               {state.habits.length > 0 && (
-                <ThemedView style={{ gap: 8 }}>
+                <ThemedView style={{ gap: Spacing.sm }}>
                   <ThemedText style={{ fontSize: 13, fontWeight: '600' }}>Simulate 30-day history</ThemedText>
-                  <ThemedView style={{ flexDirection: 'row', gap: 8 }}>
+                  <ThemedView style={{ flexDirection: 'row', gap: Spacing.sm }}>
                     <Pressable
                       onPress={() => handleFillHistory('full')}
                       disabled={fillingHistory !== null}
@@ -577,9 +577,9 @@ export default function SettingsScreen() {
               )}
 
               {state.habits.length > 0 && (
-                <ThemedView style={{ gap: 8 }}>
+                <ThemedView style={{ gap: Spacing.sm }}>
                   <ThemedText style={{ fontSize: 13, fontWeight: '600' }}>AI Coach insights</ThemedText>
-                  <ThemedView style={{ flexDirection: 'row', gap: 8 }}>
+                  <ThemedView style={{ flexDirection: 'row', gap: Spacing.sm }}>
                     {(['nudge', 'weekly', 'monthly'] as const).map((kind) => (
                       <Pressable
                         key={kind}
@@ -601,7 +601,7 @@ export default function SettingsScreen() {
               )}
 
               {state.habits.length > 0 && (
-                <ThemedView style={{ gap: 8 }}>
+                <ThemedView style={{ gap: Spacing.sm }}>
                   <ThemedText style={{ fontSize: 13, fontWeight: '600' }}>Simulate push notification</ThemedText>
                   <Pressable
                     onPress={handleSimulatePush}
@@ -638,23 +638,23 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
   content: {
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 40,
+    paddingHorizontal: Spacing.screen,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.scrollEnd,
     gap: 28,
   },
   header: {
-    gap: 4,
+    gap: Spacing.xs,
   },
   section: {
-    gap: 12,
+    gap: Spacing.md,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    padding: 16,
-    borderRadius: 16,
+    gap: Spacing.md,
+    padding: Spacing.lg,
+    borderRadius: Radius.lg,
     borderWidth: 1,
   },
   pickerRow: {
@@ -665,21 +665,21 @@ const styles = StyleSheet.create({
   devRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    padding: 12,
-    borderRadius: 12,
+    gap: Spacing.md,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
     borderWidth: 1,
   },
   devButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
     borderRadius: 10,
     borderWidth: 1.5,
   },
   resetButton: {
     alignItems: 'center',
-    paddingVertical: 14,
-    borderRadius: 14,
+    paddingVertical: Spacing.row,
+    borderRadius: Radius.row,
     borderWidth: 1.5,
   },
 });
