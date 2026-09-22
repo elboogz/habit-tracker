@@ -70,7 +70,7 @@ export function RecoveryCard({
       : `${eligibleHabits.length} habits are ready for a fresh start`;
 
   return (
-    <ThemedView style={[styles.card, { borderColor: colors.tint }]}>
+    <ThemedView variant="card" style={[styles.card, { borderColor: colors.tint }]}>
       <Pressable style={styles.header} onPress={() => setExpanded((current) => !current)}>
         <ThemedView style={styles.headerText}>
           <ThemedText type="defaultSemiBold">🔁 {summary}</ThemedText>

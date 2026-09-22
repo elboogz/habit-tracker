@@ -238,7 +238,7 @@ export default function ProgressScreen() {
           )}
 
           {hasHabits && (
-            <ThemedView style={[styles.coachCard, { borderColor: colors.tint }]}>
+            <ThemedView variant="card" style={[styles.coachCard, { borderColor: colors.tint }]}>
               <ThemedView style={styles.coachHeader}>
                 <ThemedText type="defaultSemiBold">🧠 Coach</ThemedText>
               </ThemedView>
@@ -346,7 +346,7 @@ export default function ProgressScreen() {
                   onPress={() => router.push(`/habit/${habit.id}`)}
                   style={({ pressed }) => [
                     styles.card,
-                    { borderColor: colors.icon },
+                    { borderColor: colors.icon, backgroundColor: colors.surface },
                     pressed && { opacity: 0.7 },
                   ]}>
                   <ThemedView style={styles.cardHeader}>

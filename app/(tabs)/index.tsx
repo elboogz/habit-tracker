@@ -293,7 +293,7 @@ export default function TodayScreen() {
                 if (progress.habits.length === 0) return null;
                 return (
                   <Pressable key={challenge.id} onPress={() => router.push('/(tabs)/challenges')}>
-                    <ThemedView style={[styles.challengeBanner, { borderColor: colors.tint }]}>
+                    <ThemedView variant="card" style={[styles.challengeBanner, { borderColor: colors.tint }]}>
                       <ThemedText type="defaultSemiBold">
                         🚩 Day {progress.daysElapsed} of {progress.totalDays} challenge
                       </ThemedText>
@@ -317,6 +317,7 @@ export default function TodayScreen() {
               return (
                 <ThemedView
                   key={habit.id}
+                  variant="card"
                   style={[
                     styles.habitRow,
                     { borderColor: colors.icon },

@@ -99,7 +99,7 @@ export default function HabitDetailScreen() {
             </ThemedText>
           </ThemedView>
 
-          <ThemedView style={[styles.totalCard, { borderColor: colors.icon }]}>
+          <ThemedView variant="card" style={[styles.totalCard, { borderColor: colors.icon }]}>
             <ThemedText style={styles.totalEmoji}>✅</ThemedText>
             {/* lineHeight set explicitly alongside the fontSize override: ThemedText's shared
                 `title` style pairs fontSize 32 with lineHeight 32, and this tile overrides only
@@ -114,7 +114,7 @@ export default function HabitDetailScreen() {
           </ThemedView>
 
           <ThemedView style={styles.statsRow}>
-            <ThemedView style={[styles.statCard, { borderColor: colors.icon }]}>
+            <ThemedView variant="card" style={[styles.statCard, { borderColor: colors.icon }]}>
               <ThemedText style={styles.statEmoji}>🔥</ThemedText>
               {/* Two lines instead of one "Current: X · Best: Y" string: at this tile's width the
                   combined string could wrap mid-value, stranding the separator on its own line and
@@ -129,7 +129,7 @@ export default function HabitDetailScreen() {
               <ThemedText style={{ color: colors.icon, fontSize: 13 }}>scheduled days in a row</ThemedText>
             </ThemedView>
             {recoveryTile && (
-              <ThemedView style={[styles.statCard, { borderColor: colors.icon }]}>
+              <ThemedView variant="card" style={[styles.statCard, { borderColor: colors.icon }]}>
                 <ThemedText style={styles.statEmoji}>{recoveryTile.emoji}</ThemedText>
                 <ThemedText type="title" style={{ fontSize: 28 }}>
                   {recoveryTile.value}
@@ -138,7 +138,7 @@ export default function HabitDetailScreen() {
               </ThemedView>
             )}
             {habitConsistency !== null && (
-              <ThemedView style={[styles.statCard, { borderColor: colors.icon }]}>
+              <ThemedView variant="card" style={[styles.statCard, { borderColor: colors.icon }]}>
                 <ThemedText style={styles.statEmoji}>📈</ThemedText>
                 <ThemedText type="title" style={{ fontSize: 28 }}>
                   {habitConsistency}%
