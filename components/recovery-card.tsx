@@ -70,9 +70,9 @@ export function RecoveryCard({
       : `${eligibleHabits.length} habits are ready for a fresh start`;
 
   return (
-    <ThemedView variant="card" style={[styles.card, { borderColor: colors.tint }]}>
+    <ThemedView variant="accent" style={[styles.card, { borderColor: colors.tint }]}>
       <Pressable style={styles.header} onPress={() => setExpanded((current) => !current)}>
-        <ThemedView style={styles.headerText}>
+        <ThemedView variant="transparent" style={styles.headerText}>
           <ThemedText type="defaultSemiBold">🔁 {summary}</ThemedText>
           {!expanded && (
             <ThemedText style={{ color: colors.icon, fontSize: 13 }}>Tap to see your options</ThemedText>
@@ -93,7 +93,7 @@ export function RecoveryCard({
       {expanded && (
         <ThemedView style={styles.list}>
           {eligibleHabits.map((habit) => (
-            <ThemedView key={habit.id} style={[styles.habitBlock, { borderColor: colors.icon + '33' }]}>
+            <ThemedView key={habit.id} variant="transparent" style={[styles.habitBlock, { borderColor: colors.icon + '33' }]}>
               <Pressable
                 style={styles.habitRow}
                 onPress={() => (openHabitId === habit.id ? closeHabitPanel() : setOpenHabitId(habit.id))}>
@@ -103,7 +103,7 @@ export function RecoveryCard({
               </Pressable>
 
               {openHabitId === habit.id && reflectHabitId !== habit.id && (
-                <ThemedView style={styles.options}>
+                <ThemedView variant="transparent" style={styles.options}>
                   <Pressable
                     onPress={() => {
                       onContinue(habit);
@@ -188,9 +188,9 @@ export function RecoveryCard({
               )}
 
               {openHabitId === habit.id && reflectHabitId === habit.id && (
-                <ThemedView style={styles.options}>
+                <ThemedView variant="transparent" style={styles.options}>
                   <ThemedText style={{ color: colors.icon, fontSize: 13 }}>What got in the way? Totally optional.</ThemedText>
-                  <ThemedView style={styles.chipRow}>
+                  <ThemedView variant="transparent" style={styles.chipRow}>
                     {LAPSE_REASON_OPTIONS.map((option) => (
                       <Pressable
                         key={option.key}

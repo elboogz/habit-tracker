@@ -16,7 +16,7 @@ export function HabitHeatmap({
   size?: number;
 }) {
   return (
-    <ThemedView style={styles.row}>
+    <ThemedView variant="transparent" style={styles.row}>
       {history.map((entry) => (
         <ThemedView
           key={entry.date}

@@ -113,8 +113,8 @@ function HabitSnapshot({
   const recoveryLine = recoveryRateLine(rate.rolling, recoveryCount);
 
   return (
-    <ThemedView style={{ gap: Spacing.compact }}>
-      <ThemedView style={styles.momentumRow}>
+    <ThemedView variant="transparent" style={{ gap: Spacing.compact }}>
+      <ThemedView variant="transparent" style={styles.momentumRow}>
         <ThemedView style={[styles.momentumBadge, { borderColor: colors.tint }]}>
           <ThemedText style={{ color: colors.tint, fontSize: 13, fontWeight: '700' }}>{copy.badge}</ThemedText>
         </ThemedView>
@@ -238,14 +238,14 @@ export default function ProgressScreen() {
           )}
 
           {hasHabits && (
-            <ThemedView variant="card" style={[styles.coachCard, { borderColor: colors.tint }]}>
-              <ThemedView style={styles.coachHeader}>
+            <ThemedView variant="accent" style={[styles.coachCard, { borderColor: colors.tint }]}>
+              <ThemedView variant="transparent" style={styles.coachHeader}>
                 <ThemedText type="defaultSemiBold">🧠 Coach</ThemedText>
               </ThemedView>
 
               <ThemedText style={{ color: colors.icon, fontSize: 12, fontWeight: '600' }}>💡 Today&apos;s tip</ThemedText>
               {nudgeLoading ? (
-                <ThemedView style={styles.coachLoading}>
+                <ThemedView variant="transparent" style={styles.coachLoading}>
                   <ActivityIndicator color={colors.tint} />
                   <ThemedText style={{ color: colors.icon, fontSize: 13 }}>Thinking about your habits...</ThemedText>
                 </ThemedView>
@@ -260,9 +260,9 @@ export default function ProgressScreen() {
                 </>
               )}
 
-              <ThemedView style={[styles.coachDivider, { borderColor: colors.icon }]} />
+              <ThemedView variant="transparent" style={[styles.coachDivider, { borderColor: colors.icon }]} />
 
-              <ThemedView style={styles.segmented}>
+              <ThemedView variant="transparent" style={styles.segmented}>
                 <Pressable
                   onPress={() => setReflectionMode('weekly')}
                   style={[
@@ -291,7 +291,7 @@ export default function ProgressScreen() {
                 {reflectionMode === 'weekly' ? '📅 Weekly reflection' : '🗓️ Monthly reflection'}
               </ThemedText>
               {reflectionLoading ? (
-                <ThemedView style={styles.coachLoading}>
+                <ThemedView variant="transparent" style={styles.coachLoading}>
                   <ActivityIndicator color={colors.tint} />
                   <ThemedText style={{ color: colors.icon, fontSize: 13 }}>Putting together your reflection...</ThemedText>
                 </ThemedView>
@@ -349,7 +349,7 @@ export default function ProgressScreen() {
                     { borderColor: colors.icon, backgroundColor: colors.surface },
                     pressed && { opacity: 0.7 },
                   ]}>
-                  <ThemedView style={styles.cardHeader}>
+                  <ThemedView variant="transparent" style={styles.cardHeader}>
                     <ThemedText type="defaultSemiBold" style={{ flex: 1 }}>
                       {habit.emoji} {habit.name}
                     </ThemedText>
