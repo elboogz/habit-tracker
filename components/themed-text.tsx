@@ -16,7 +16,7 @@ export function ThemedText({
   type = 'default',
   ...rest
 }: ThemedTextProps) {
-  const color = useThemeColor({ light: lightColor, dark: darkColor }, 'text');
+  const color = useThemeColor({ light: lightColor, dark: darkColor }, type === 'link' ? 'tint' : 'text');
 
   return (
     <Text
@@ -57,7 +57,6 @@ const styles = StyleSheet.create({
   link: {
     lineHeight: 30,
     fontSize: 16,
-    color: '#0a7ea4',
   },
   // Product Polish (docs/implementation-roadmap.md's "Product Polish" section): screen/section
   // titles only -- never stat numbers, which stay on `title` (sans) so large figures keep a

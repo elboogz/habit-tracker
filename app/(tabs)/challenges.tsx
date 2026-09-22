@@ -76,7 +76,12 @@ export default function ChallengesScreen() {
                         Day {progress.daysElapsed} of {progress.totalDays}
                         {progress.todayDone ? ' — today is locked in!' : ' — log them all today to keep going'}
                       </ThemedText>
-                      <DayDots progress={progress} tint={colors.tint} muted={colors.icon} />
+                      <DayDots
+                        progress={progress}
+                        tint={colors.tint}
+                        muted={colors.icon}
+                        filledText={colors.background}
+                      />
                     </ThemedView>
                   );
                 })}
@@ -215,7 +220,17 @@ function formatChallengeDate(dateKey: string): string {
   });
 }
 
-function DayDots({ progress, tint, muted }: { progress: ChallengeProgress; tint: string; muted: string }) {
+function DayDots({
+  progress,
+  tint,
+  muted,
+  filledText,
+}: {
+  progress: ChallengeProgress;
+  tint: string;
+  muted: string;
+  filledText: string;
+}) {
   return (
     <ThemedView style={styles.dotRow}>
       {Array.from({ length: progress.totalDays }).map((_, index) => {
@@ -230,7 +245,7 @@ function DayDots({ progress, tint, muted }: { progress: ChallengeProgress; tint:
               { borderColor: isCurrent ? tint : muted },
               filled && { backgroundColor: tint, borderColor: tint },
             ]}>
-            <ThemedText style={{ fontSize: 12, color: filled ? '#fff' : muted }}>{dayNumber}</ThemedText>
+            <ThemedText style={{ fontSize: 12, color: filled ? filledText : muted }}>{dayNumber}</ThemedText>
           </ThemedView>
         );
       })}
