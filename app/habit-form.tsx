@@ -128,7 +128,7 @@ export default function HabitFormScreen() {
       />
       <SafeAreaView style={styles.safeArea} edges={['bottom', 'left', 'right']}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <ThemedText type="title">{isEditing ? 'Edit habit' : 'New habit'}</ThemedText>
+          <ThemedText type="display">{isEditing ? 'Edit habit' : 'New habit'}</ThemedText>
 
           <ThemedView style={styles.section}>
             <ThemedText type="defaultSemiBold">Name</ThemedText>

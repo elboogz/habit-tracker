@@ -262,7 +262,7 @@ export default function TodayScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <ThemedView style={styles.header}>
-            <ThemedText type="title">Today</ThemedText>
+            <ThemedText type="display">Today</ThemedText>
             <ThemedText style={{ color: colors.icon }}>{formatTodayLabel()}</ThemedText>
             {habits.length > 0 && (
               <ThemedText style={{ color: colors.icon }}>

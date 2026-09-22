@@ -88,7 +88,7 @@ export default function ResetPasswordScreen() {
           {!verified ? (
             <>
               <ThemedView style={{ gap: 6 }}>
-                <ThemedText type="title">Enter your reset code</ThemedText>
+                <ThemedText type="display">Enter your reset code</ThemedText>
                 <ThemedText style={{ color: colors.icon }}>
                   We emailed a code to the address below. Enter it to continue.
                 </ThemedText>
@@ -144,7 +144,7 @@ export default function ResetPasswordScreen() {
           ) : (
             <>
               <ThemedView style={{ gap: 6 }}>
-                <ThemedText type="title">Set a new password</ThemedText>
+                <ThemedText type="display">Set a new password</ThemedText>
                 <ThemedText style={{ color: colors.icon }}>Choose a new password for your account.</ThemedText>
               </ThemedView>
 

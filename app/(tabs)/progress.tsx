@@ -213,7 +213,7 @@ export default function ProgressScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <ThemedView style={styles.header}>
-            <ThemedText type="title">Progress</ThemedText>
+            <ThemedText type="display">Progress</ThemedText>
             {!hasHabits && (
               <ThemedText style={{ color: colors.icon }}>Your progress story starts once you log a habit</ThemedText>
             )}

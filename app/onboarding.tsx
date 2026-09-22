@@ -92,7 +92,7 @@ export default function OnboardingScreen() {
         {step === 1 && (
           <ThemedView style={styles.stepBody}>
             <ThemedView style={{ flex: 1, justifyContent: 'center', gap: 22 }}>
-              <ThemedText type="title">How it works</ThemedText>
+              <ThemedText type="display">How it works</ThemedText>
               <ThemedView style={{ gap: 18 }}>
                 <FeatureRow
                   emoji="✅"
@@ -127,7 +127,7 @@ export default function OnboardingScreen() {
         {step === 2 && (
           <ThemedView style={styles.stepBody}>
             <ThemedView style={{ gap: 6 }}>
-              <ThemedText type="title">Pick your habits</ThemedText>
+              <ThemedText type="display">Pick your habits</ThemedText>
               <ThemedText style={{ color: colors.icon }}>
                 Choose one or more to start with. You can always add more later.
               </ThemedText>
@@ -206,7 +206,7 @@ export default function OnboardingScreen() {
         {step === 4 && (
           <ThemedView style={styles.stepBody}>
             <ThemedView style={{ gap: 6 }}>
-              <ThemedText type="title">Stay on track</ThemedText>
+              <ThemedText type="display">Stay on track</ThemedText>
               <ThemedText style={{ color: colors.icon }}>
                 A daily nudge around 9:00 AM helps the habit stick, especially for the next three days. You can
                 change this anytime in Settings.
@@ -269,7 +269,7 @@ function Step({
     <ThemedView style={styles.stepBody}>
       <ThemedView style={{ flex: 1, justifyContent: 'center', gap: 16 }}>
         <ThemedText style={{ fontSize: 56, lineHeight: 80 }}>{emoji}</ThemedText>
-        <ThemedText type="title">{title}</ThemedText>
+        <ThemedText type="display">{title}</ThemedText>
         <ThemedText style={{ color: colors.icon, fontSize: 16, lineHeight: 22 }}>{body}</ThemedText>
       </ThemedView>
       <PrimaryButton label={primary} onPress={onPrimary} colors={colors} />

@@ -71,7 +71,7 @@ export default function SignInScreen() {
       <SafeAreaView style={styles.safeArea}>
         <ThemedView style={styles.content}>
           <ThemedView style={{ gap: 6 }}>
-            <ThemedText type="title">{isSignUp ? 'Create an account' : 'Welcome back'}</ThemedText>
+            <ThemedText type="display">{isSignUp ? 'Create an account' : 'Welcome back'}</ThemedText>
             <ThemedText style={{ color: colors.icon }}>
               {isSignUp
                 ? 'Your habits sync to this account and stay backed up across devices.'

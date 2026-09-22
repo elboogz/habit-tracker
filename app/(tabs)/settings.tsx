@@ -261,7 +261,7 @@ export default function SettingsScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <ThemedView style={styles.header}>
-            <ThemedText type="title">Settings</ThemedText>
+            <ThemedText type="display">Settings</ThemedText>
           </ThemedView>
 
           <ThemedView style={styles.section}>

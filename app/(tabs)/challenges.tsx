@@ -54,7 +54,7 @@ export default function ChallengesScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <ThemedView style={styles.header}>
-            <ThemedText type="title">Challenges</ThemedText>
+            <ThemedText type="display">Challenges</ThemedText>
             <ThemedText style={{ color: colors.icon }}>
               Pick the habits to include and how long to run for — complete all of them every day to keep it alive.
             </ThemedText>

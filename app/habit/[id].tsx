@@ -93,7 +93,7 @@ export default function HabitDetailScreen() {
       <SafeAreaView style={styles.safeArea} edges={['bottom', 'left', 'right']}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <ThemedView style={styles.header}>
-            <ThemedText type="title">Habit History</ThemedText>
+            <ThemedText type="display">Habit History</ThemedText>
             <ThemedText style={{ color: colors.icon }}>
               {habit.emoji} {habit.name}
             </ThemedText>
