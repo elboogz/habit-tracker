@@ -320,7 +320,7 @@ export default function TodayScreen() {
                   variant="card"
                   style={[
                     styles.habitRow,
-                    { borderColor: colors.icon },
+                    { borderColor: colors.icon + '33' },
                     habit.type === 'count' && { alignItems: 'flex-start' },
                   ]}>
                   <Pressable
@@ -345,7 +345,7 @@ export default function TodayScreen() {
                       ) : null}
                     </Pressable>
                     {habit.type === 'count' && (
-                      <ThemedView style={styles.countStepper}>
+                      <ThemedView variant="transparent" style={styles.countStepper}>
                         <Pressable
                           onPress={() => unlogHabit(habit.id)}
                           disabled={todayCount === 0}

@@ -115,7 +115,7 @@ function HabitSnapshot({
   return (
     <ThemedView variant="transparent" style={{ gap: Spacing.compact }}>
       <ThemedView variant="transparent" style={styles.momentumRow}>
-        <ThemedView style={[styles.momentumBadge, { borderColor: colors.tint }]}>
+        <ThemedView variant="transparent" style={[styles.momentumBadge, { borderColor: colors.tint }]}>
           <ThemedText style={{ color: colors.tint, fontSize: 13, fontWeight: '700' }}>{copy.badge}</ThemedText>
         </ThemedView>
       </ThemedView>
@@ -238,7 +238,7 @@ export default function ProgressScreen() {
           )}
 
           {hasHabits && (
-            <ThemedView variant="accent" style={[styles.coachCard, { borderColor: colors.tint }]}>
+            <ThemedView variant="card" style={[styles.coachCard, { borderColor: colors.tint }]}>
               <ThemedView variant="transparent" style={styles.coachHeader}>
                 <ThemedText type="defaultSemiBold">🧠 Coach</ThemedText>
               </ThemedView>
@@ -346,7 +346,7 @@ export default function ProgressScreen() {
                   onPress={() => router.push(`/habit/${habit.id}`)}
                   style={({ pressed }) => [
                     styles.card,
-                    { borderColor: colors.icon, backgroundColor: colors.surface },
+                    { borderColor: colors.icon + '33', backgroundColor: colors.surface },
                     pressed && { opacity: 0.7 },
                   ]}>
                   <ThemedView variant="transparent" style={styles.cardHeader}>

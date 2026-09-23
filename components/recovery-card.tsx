@@ -91,7 +91,7 @@ export function RecoveryCard({
       </Pressable>
 
       {expanded && (
-        <ThemedView style={styles.list}>
+        <ThemedView variant="transparent" style={styles.list}>
           {eligibleHabits.map((habit) => (
             <ThemedView key={habit.id} variant="transparent" style={[styles.habitBlock, { borderColor: colors.icon + '33' }]}>
               <Pressable

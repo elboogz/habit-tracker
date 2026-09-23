@@ -48,6 +48,7 @@ export function HabitCalendar({
   emptyColor,
   textColor,
   doneTextColor,
+  cellSurfaceColor,
   onDayPress,
   minEditableDate,
 }: {
@@ -56,6 +57,11 @@ export function HabitCalendar({
   emptyColor: string;
   textColor: string;
   doneTextColor: string;
+  /** Product Polish Step 4: ordinary (not-done) day cells' fill -- the approved `surface` token,
+   * passed explicitly since this component has no theme access of its own. Optional so a caller
+   * that omits it keeps the prior (no explicit fill) behaviour; `day.done`'s own backgroundColor
+   * override below still wins over this regardless. */
+  cellSurfaceColor?: string;
   onDayPress?: (date: string) => void;
   minEditableDate?: string;
 }) {
@@ -96,6 +102,7 @@ export function HabitCalendar({
               styles.cell,
               styles.dayCell,
               { borderColor: isToday ? fillColor : isReceded ? emptyColor + '20' : emptyColor + '33' },
+              cellSurfaceColor !== undefined && { backgroundColor: cellSurfaceColor },
               day.done && { backgroundColor: fillColor, borderColor: fillColor },
               isEditable && { borderStyle: 'dashed' as const },
             ];
