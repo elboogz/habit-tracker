@@ -163,7 +163,7 @@ The behavioural fixtures in `docs/phase-2-implementation-plan.md` §8 are behavi
 
 ### Theming
 
-Colors are centralized in [constants/theme.ts](constants/theme.ts) as a `Colors.light` / `Colors.dark` map (keys: `text`, `background`, `tint`, `icon`, `tabIconDefault`, `tabIconSelected`), plus a `Fonts` map keyed per-platform (`ios` / `default` / `web`).
+Colors are centralized in [constants/theme.ts](constants/theme.ts) as a `Colors.light` / `Colors.dark` map (keys: `text`, `background`, `tint`, `icon`, `tabIconDefault`, `tabIconSelected`), plus a `Fonts` map keyed per-platform (`ios` / `default` / `web`). Product Polish's current design-system status (palette, spacing/radius scales, `ThemedView` variants) is recorded in [docs/product-polish-plan.md](docs/product-polish-plan.md).
 
 Don't read `useColorScheme()` and index into `Colors` directly in screens — use the themed primitives, which already resolve the right color and support `lightColor`/`darkColor` overrides:
 - [components/themed-text.tsx](components/themed-text.tsx) / [components/themed-view.tsx](components/themed-view.tsx) — themed `Text`/`View` wrappers

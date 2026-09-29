@@ -90,6 +90,8 @@ Both fixes implemented and verified (`npx tsc --noEmit`, `npm run lint`, `npm te
 
 # Product Polish — Premium experience
 
+Current status, implemented design system, and remaining work: `docs/product-polish-plan.md`.
+
 Scope:
 
 - typography
